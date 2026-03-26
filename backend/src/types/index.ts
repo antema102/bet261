@@ -3,7 +3,12 @@ import { Document } from 'mongoose';
 export interface IMatch extends Document {
   league_name: string;
   league_id: number;
-  data: Record<string, unknown>;
+  round_number: number;
+  event_category_id: number;
+  expected_start?: Date;
+  odds_data?: Record<string, unknown>;   // données brutes du round (cotes, matchs)
+  result_data?: Record<string, unknown>; // données résultat une fois le round terminé
+  status: 'upcoming' | 'finished';
   timestamp: Date;
 }
 

@@ -1,0 +1,129 @@
+{
+    "matches": [
+        {
+            "id": 63105797,
+            "entryPointId": 0,
+            "goals": [
+                {
+                    "minute": 27,
+                    "homeScore": 1.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 31,
+                    "homeScore": 2.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 57,
+                    "homeScore": 2.0,
+                    "awayScore": 1.0
+                }
+            ],
+            "expectedStart": "0001-01-01T00:00:00Z"
+        },
+        {
+            "id": 63192293,
+            "entryPointId": 0,
+            "goals": [
+                {
+                    "minute": 22,
+                    "homeScore": 1.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 37,
+                    "homeScore": 1.0,
+                    "awayScore": 1.0
+                },
+                {
+                    "minute": 44,
+                    "homeScore": 2.0,
+                    "awayScore": 1.0
+                },
+                {
+                    "minute": 65,
+                    "homeScore": 3.0,
+                    "awayScore": 1.0
+                },
+                {
+                    "minute": 67,
+                    "homeScore": 3.0,
+                    "awayScore": 2.0
+                },
+                {
+                    "minute": 86,
+                    "homeScore": 4.0,
+                    "awayScore": 2.0
+                }
+            ],
+            "expectedStart": "0001-01-01T00:00:00Z"
+        },
+        {
+            "id": 63192294,
+            "entryPointId": 0,
+            "goals": [
+                {
+                    "minute": 21,
+                    "homeScore": 1.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 22,
+                    "homeScore": 2.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 26,
+                    "homeScore": 3.0,
+                    "awayScore": 0.0
+                }
+            ],
+            "expectedStart": "0001-01-01T00:00:00Z"
+        },
+        {
+            "id": 63192295,
+            "entryPointId": 0,
+            "goals": [
+                {
+                    "minute": 74,
+                    "homeScore": 0.0,
+                    "awayScore": 1.0
+                },
+                {
+                    "minute": 90,
+                    "homeScore": 1.0,
+                    "awayScore": 1.0
+                }
+            ],
+            "expectedStart": "0001-01-01T00:00:00Z"
+        },
+        {
+            "id": 63192296,
+            "entryPointId": 0,
+            "goals": [
+                {
+                    "minute": 28,
+                    "homeScore": 1.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 59,
+                    "homeScore": 2.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 70,
+                    "homeScore": 3.0,
+                    "awayScore": 0.0
+                },
+                {
+                    "minute": 80,
+                    "homeScore": 4.0,
+                    "awayScore": 0.0
+                }
+            ],
+            "expectedStart": "0001-01-01T00:00:00Z"
+        }
+    ]
+}

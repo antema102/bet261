@@ -8,11 +8,12 @@ import roundRoutes from './routes/roundRoutes';
 import resultRoutes from './routes/resultRoutes';
 import rankingRoutes from './routes/rankingRoutes';
 import leagueRoutes from './routes/leagueRoutes';
+import analysisRoutes from './routes/analysisRoutes';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 // Middleware
 app.use(cors());
@@ -28,6 +29,7 @@ app.use('/api/rounds', roundRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/rankings', rankingRoutes);
 app.use('/api/leagues', leagueRoutes);
+app.use('/api/analysis', analysisRoutes);
 
 // Route de santé
 app.get('/health', (_req, res) => {

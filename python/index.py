@@ -31,8 +31,8 @@ class VirtualSportsScraper:
             'Portuguese_League': 8044
         }
         
-        self.backend_url = "http://localhost:3000/api"  # URL du backend Node.js
-
+        self.backend_url = "http://127.0.0.1:3000/api"  
+        
     def fetch_data(self, url: str) -> Optional[Dict]:
         """Récupère les données depuis l'API"""
         try:
@@ -135,15 +135,39 @@ class VirtualSportsScraper:
                 'timestamp': datetime.now().isoformat()
             })
         
-        # 4. Récupérer le classement
-        ranking_data = self.get_ranking(league_id)
-        if ranking_data:
-            self.send_to_backend('rankings', {
-                'league_name': league_name,
-                'league_id': league_id,
-                'data': ranking_data,
-                'timestamp': datetime.now().isoformat()
-            })
+        # # 4. Récupérer le classement
+        # ranking_data = self.get_ranking(league_id)
+
+        # if ranking_data:
+        #     self.send_to_backend('rankings', {
+        #         'league_name': league_name,
+        #         'league_id': league_id,
+        #         'data': ranking_data,
+        #         'timestamp': datetime.now().isoformat()
+        #     })
+
+        # 5 .Récupérer les matchs en cours (playout)
+        if matches_data and 'rounds' in matches_data:
+            for round_info in matches_data['rounds']:
+                round_number = round_info.get('roundNumber')
+                event_category_id = round_info.get('eventCategoryId')
+                parent_event_id = round_info.get('parentEventCategoryId')
+                
+                if round_number and event_category_id and parent_event_id:
+                    playout_data = self.get_live_playout(round_number, event_category_id, parent_event_id)
+                    if playout_data:
+                        self.send_to_backend('playouts', {
+                            'league_name': league_name,
+                            'league_id': league_id,
+                            'round_number': round_number,
+                            'event_category_id': event_category_id,
+                            'parent_event_id': parent_event_id,
+                            'data': playout_data,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    
+                    # Petit délai pour ne pas surcharger l'API
+                    time.sleep(0.5)
 
     def run_continuous(self, interval: int = 120):
         """Exécute le scraping en continu toutes les X secondes"""

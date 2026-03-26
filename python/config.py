@@ -7,7 +7,7 @@ DEFAULT_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 }
 
-BACKEND_URL = "http://localhost:3000/api"
+BACKEND_URL = "http://127.0.0.1:4000/api"
 
 CATEGORIES: dict[str, int] = {
     'English_League': 8035,
@@ -23,11 +23,18 @@ CATEGORIES: dict[str, int] = {
 # Intervalle par défaut entre chaque cycle de scraping (en secondes)
 DEFAULT_INTERVAL = 120
 
-# Délai entre chaque requête pour ne pas surcharger l'API
+# Intervalle de vérification des résultats (en secondes)
+RESULT_CHECK_INTERVAL = 60
+
+# Délai minimum (en secondes) après expectedStart avant d'appeler l'API playout
+# Les matchs virtuels durent ~3 minutes en temps réel → on attend 2 min avant de vérifier
+PLAYOUT_DELAY = 120
+
+# Délai entre chaque requête de round pour ne pas surcharger l'API (par ligue)
 REQUEST_DELAY = 0.5
 
-# Délai entre chaque ligue
-LEAGUE_DELAY = 1.0
+# Nombre de ligues scrapées en parallèle (1 thread par ligue)
+MAX_WORKERS = 8
 
 # Timeout des requêtes HTTP (en secondes)
 REQUEST_TIMEOUT = 10
