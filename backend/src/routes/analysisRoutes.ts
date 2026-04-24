@@ -245,6 +245,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       league_id: number;
       round_number: number;
       event_category_id: number;
+      matchId?: number;
       matchName: string;
       homeTeam: string;
       awayTeam: string;
@@ -262,6 +263,7 @@ router.get('/daily', async (req: Request, res: Response) => {
             league_id: round.league_id,
             round_number: round.round_number,
             event_category_id: (round as any).event_category_id,
+            matchId: subMatches[i].matchId,
             matchName: subMatches[i].name,
             homeTeam: subMatches[i].homeTeam,
             awayTeam: subMatches[i].awayTeam,
@@ -298,6 +300,8 @@ router.get('/daily', async (req: Request, res: Response) => {
         const awayWins = similarsWithDist.filter(s => s.result.homeScore < s.result.awayScore).length;
 
         const top5 = similarsWithDist.slice(0, 5).map(h => ({
+          matchId:     (h as any).matchId,
+          round_number: h.round_number,
           league_name: h.league_name,
           matchName:   h.matchName,
           homeTeam:    h.homeTeam,

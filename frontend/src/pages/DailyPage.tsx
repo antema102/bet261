@@ -211,12 +211,16 @@ function MatchCard({
             return (
               <div key={j} className="px-4 py-2 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-gray-600 font-mono shrink-0">R{sm.round_number}</span>
                   <span className="text-emerald-500/70 shrink-0">{sm.league_name.replace(/_/g, ' ')}</span>
                   <span className="text-gray-400 truncate">
                     {sm.homeTeam} <span className="text-gray-600">vs</span> {sm.awayTeam}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-2">
+                  {sm.matchId != null && (
+                    <span className="text-gray-700 font-mono">#{sm.matchId}</span>
+                  )}
                   <div className="flex gap-1 font-mono">
                     <span className="text-emerald-400">{sm.odds.home.toFixed(2)}</span>
                     <span className="text-yellow-400">{sm.odds.draw.toFixed(2)}</span>

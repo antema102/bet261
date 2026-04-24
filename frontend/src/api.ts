@@ -20,6 +20,8 @@ export interface OddsTriple {
 }
 
 export interface SimilarMatchBrief {
+  matchId?: number;
+  round_number: number;
   league_name: string;
   matchName: string;
   homeTeam: string;

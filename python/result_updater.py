@@ -219,6 +219,15 @@ class ResultUpdater:
             if not result_data:
                 return f"{league_name} R{round_number} — aucun résultat disponible (trop tôt ?)"
 
+            # Refus du fallback positionnel : IDs playout ≠ IDs matches → scores potentiellement mal attribués
+            source = result_data.get("matches", [{}])[0].get("_source", "")
+            if source == "playout_index":
+                logger.info(
+                    "Ligue %d R%d — source playout_index ignorée (matching positionnel non fiable)",
+                    league_id, round_number,
+                )
+                return f"{league_name} R{round_number} — ignoré (playout_index, scores non fiables)"
+
             success = self.backend.update_result(
                 league_id, round_number, result_data, event_category_id
             )
