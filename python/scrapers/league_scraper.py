@@ -75,16 +75,22 @@ class LeagueScraper:
                     api_match.get("name"), key,
                 )
 
+            # Détermine l'ID réel et l'ID des cotes
+            # Si api_match vient de /matches → id=vrai ID (= playout), odds_id=ID round
+            # Si api_match vient de /round (fallback) → on utilise le même ID pour les deux
+            real_id = api_match.get("id")
+            odds_id = odds_match.get("id") if odds_match else real_id
+
             merged_matches.append({
-                "id": api_match.get("id"),                    # ID réel (= playout)
-                "odds_id": odds_match.get("id"),              # ID des cotes
+                "id": real_id,
+                "odds_id": odds_id,
                 "name": api_match.get("name"),
                 "homeTeam": api_match.get("homeTeam"),
                 "awayTeam": api_match.get("awayTeam"),
                 "entryPointId": api_match.get("entryPointId"),
                 "round": api_match.get("round"),
                 "expectedStart": api_match.get("expectedStart"),
-                "eventBetTypes": odds_match.get("eventBetTypes", []),  # cotes
+                "eventBetTypes": odds_match.get("eventBetTypes", []) if odds_match else [],
             })
         
         # Supprime round.matches (redondant avec matches[]) pour alléger MongoDB
@@ -122,33 +128,31 @@ class LeagueScraper:
 
             # 2. Récupérer les détails du round (cotes)
             odds_data = self.api.get_round_details(round_number, event_category_id)
-            if odds_data and matches_list:
-                # Fusionner les vrais IDs de /matches avec les cotes de /round
-                merged_data = self._merge_matches_with_odds(matches_list, odds_data)
-
-                self.backend.upsert_match(
-                    league_name,
-                    league_id,
-                    round_number,
-                    event_category_id,
-                    expected_start,
-                    merged_data,  # Données fusionnées
+            if not odds_data:
+                logger.warning(
+                    "%s R%s — pas de cotes (get_round_details a échoué)",
+                    league_name, round_number,
                 )
-                stored_count += 1
-            elif odds_data:
-                # Fallback si pas de matchs dans /matches
+                skipped_count += 1
+                time.sleep(REQUEST_DELAY)
+                continue
+
+            # Si /matches n'a pas fourni les matchs de ce round (cas courant pour
+            # les rounds 2+), on les extrait directement depuis /round/{n}
+            if not matches_list:
+                matches_list = odds_data.get("round", {}).get("matches", [])
+
+            if matches_list:
+                # Fusionner les IDs de /matches (ou /round si fallback) avec les cotes
+                merged_data = self._merge_matches_with_odds(matches_list, odds_data)
                 self.backend.upsert_match(
-                    league_name,
-                    league_id,
-                    round_number,
-                    event_category_id,
-                    expected_start,
-                    odds_data,
+                    league_name, league_id, round_number,
+                    event_category_id, expected_start, merged_data,
                 )
                 stored_count += 1
             else:
                 logger.warning(
-                    "%s R%s — pas de cotes (get_round_details a échoué)",
+                    "%s R%s — aucun match trouvé ni dans /matches ni dans /round",
                     league_name, round_number,
                 )
                 skipped_count += 1
