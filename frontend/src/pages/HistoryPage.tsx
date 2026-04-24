@@ -1,54 +1,79 @@
 import { useEffect, useState } from 'react';
-import { api, type MatchDocument } from '../api';
+import { api, type MatchDocument, type LeagueOption } from '../api';
 import { Spinner, ErrorMsg, formatDate, formatTime } from '../components/ui';
 
 export default function HistoryPage() {
   const [matches, setMatches] = useState<MatchDocument[]>([]);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'finished' | 'upcoming'>('all');
+  const [leagueId, setLeagueId] = useState<number | ''>('');
 
   useEffect(() => {
-    api.getMatches()
-      .then(setMatches)
+    setLoading(true);
+    setError('');
+
+    Promise.all([
+      api.getMatches({
+        leagueId: leagueId || undefined,
+        status: filter === 'all' ? undefined : filter,
+        limit: 100,
+      }),
+      api.getLeagues(),
+    ])
+      .then(([matchesData, leaguesData]) => {
+        setMatches(matchesData);
+        setLeagues(leaguesData);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
-
-  const filtered = filter === 'all'
-    ? matches
-    : matches.filter((m) => m.status === filter);
+  }, [filter, leagueId]);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-white">📜 Historique des matchs</h2>
-        <div className="flex gap-1">
-          {(['all', 'upcoming', 'finished'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                filter === f
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              {f === 'all' ? 'Tous' : f === 'upcoming' ? '⏳ À venir' : '✅ Terminés'}
-            </button>
-          ))}
+        <div className="flex gap-2 items-center">
+          <select
+            value={leagueId}
+            onChange={(e) => setLeagueId(e.target.value ? Number(e.target.value) : '')}
+            className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+          >
+            <option value="">Toutes les ligues</option>
+            {leagues.map((league) => (
+              <option key={league.league_id} value={league.league_id}>
+                {league.league_name}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-1">
+            {(['all', 'upcoming', 'finished'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  filter === f
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                {f === 'all' ? 'Tous' : f === 'upcoming' ? '⏳ À venir' : '✅ Terminés'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {loading && <Spinner />}
       {error && <ErrorMsg message={error} />}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && matches.length === 0 && (
         <p className="text-gray-500 text-center py-8">Aucun match trouvé.</p>
       )}
 
       <div className="space-y-2">
-        {filtered.map((match) => (
+        {matches.map((match) => (
           <MatchRow key={match._id} match={match} />
         ))}
       </div>
@@ -59,12 +84,10 @@ export default function HistoryPage() {
 function MatchRow({ match }: { match: MatchDocument }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Extraire les sous-matchs de odds_data
-  const roundObj = match.odds_data?.round ?? match.odds_data;
-  const subMatches: any[] = roundObj?.matches ?? [];
+  const subMatches: any[] = match.odds_data?.matches ?? match.odds_data?.round?.matches ?? [];
 
-  // Extraire les résultats
   const results: any[] = match.result_data?.matches ?? [];
+  const resultsById = new Map(results.map((r: any) => [r.id, r]));
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
@@ -82,6 +105,9 @@ function MatchRow({ match }: { match: MatchDocument }) {
           </span>
           <span className="text-emerald-400 font-medium">{match.league_name}</span>
           <span className="text-gray-500 text-sm">R{match.round_number}</span>
+          <span className="text-xs text-gray-600 border border-gray-700 rounded px-1.5 py-0.5">
+            Saison {match.event_category_id}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-400">
@@ -103,12 +129,9 @@ function MatchRow({ match }: { match: MatchDocument }) {
             const draw = items.find((x: any) => x.shortName === 'X')?.odds;
             const away = items.find((x: any) => x.shortName === '2')?.odds;
 
-            // Résultat correspondant
-            const result = results[i];
-            const goals = result?.goals ?? [];
-            const lastGoal = goals.length > 0 ? goals[goals.length - 1] : null;
-            const homeScore = lastGoal ? Math.round(lastGoal.homeScore) : null;
-            const awayScore = lastGoal ? Math.round(lastGoal.awayScore) : null;
+            const result = resultsById.get(sm.id) ?? (sm.odds_id != null ? resultsById.get(sm.odds_id) : undefined) ?? results[i];
+            const homeScore = result?.homeScore ?? null;
+            const awayScore = result?.awayScore ?? null;
 
             return (
               <div key={i} className="px-4 py-2 flex items-center justify-between text-sm">

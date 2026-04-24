@@ -21,20 +21,25 @@ CATEGORIES: dict[str, int] = {
 }
 
 # Intervalle par défaut entre chaque cycle de scraping (en secondes)
-DEFAULT_INTERVAL = 120
+# ⚠ Doit être < à la fréquence des rounds (~120s) pour ne rien rater
+DEFAULT_INTERVAL = 60
 
 # Intervalle de vérification des résultats (en secondes)
-RESULT_CHECK_INTERVAL = 60
+RESULT_CHECK_INTERVAL = 45
 
 # Délai minimum (en secondes) après expectedStart avant d'appeler l'API playout
-# Les matchs virtuels durent ~3 minutes en temps réel → on attend 2 min avant de vérifier
-PLAYOUT_DELAY = 120
+# Les matchs virtuels durent ~3 minutes → on attend 90s avant de vérifier
+PLAYOUT_DELAY = 90
 
 # Délai entre chaque requête de round pour ne pas surcharger l'API (par ligue)
-REQUEST_DELAY = 0.5
+REQUEST_DELAY = 0.1
 
 # Nombre de ligues scrapées en parallèle (1 thread par ligue)
 MAX_WORKERS = 8
 
 # Timeout des requêtes HTTP (en secondes)
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 15
+
+# Nombre de tentatives en cas d'échec d'un appel API
+API_RETRIES = 3
+API_RETRY_DELAY = 2  # secondes entre chaque retry

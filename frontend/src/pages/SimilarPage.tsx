@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
-import { api, type SimilarResponse } from '../api';
-import { OddsBadge, ProbBar, Spinner, ErrorMsg, formatDate } from '../components/ui';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { api, type SimilarResponse, type LeagueOption } from '../api';
+import { OddsBadge, ProbBar, Spinner, ErrorMsg, formatDate, formatTime } from '../components/ui';
 
 export default function SimilarPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const home = parseFloat(params.get('home') ?? '');
   const draw = parseFloat(params.get('draw') ?? '');
   const away = parseFloat(params.get('away') ?? '');
   const tolerance = parseFloat(params.get('tolerance') ?? '0.3');
+  const queryLeagueId = parseFloat(params.get('league_id') ?? '');
+  const excludeLeagueId = params.get('exclude_league_id') ? parseInt(params.get('exclude_league_id')!) : undefined;
+  const excludeEventCategoryId = params.get('exclude_event_category_id') ? parseInt(params.get('exclude_event_category_id')!) : undefined;
+  const excludeRoundNumber = params.get('exclude_round_number') ? parseInt(params.get('exclude_round_number')!) : undefined;
 
   const [data, setData] = useState<SimilarResponse | null>(null);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [leagueId, setLeagueId] = useState<number | ''>(isNaN(queryLeagueId) ? '' : queryLeagueId);
+  const [currentTolerance, setCurrentTolerance] = useState(isNaN(tolerance) ? 0.3 : tolerance);
 
   useEffect(() => {
     if (isNaN(home) || isNaN(draw) || isNaN(away)) {
@@ -20,11 +28,35 @@ export default function SimilarPage() {
       setLoading(false);
       return;
     }
-    api.getSimilar(home, draw, away, tolerance, 50)
-      .then(setData)
+
+    setLoading(true);
+    setError('');
+    Promise.all([
+      api.getSimilar(home, draw, away, currentTolerance, 50, leagueId || undefined, excludeLeagueId, excludeEventCategoryId, excludeRoundNumber),
+      api.getLeagues(),
+    ])
+      .then(([similarData, leaguesData]) => {
+        setData(similarData);
+        setLeagues(leaguesData);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [home, draw, away, tolerance]);
+  }, [home, draw, away, currentTolerance, leagueId]);
+
+  const updateLeague = (value: number | '') => {
+    setLeagueId(value);
+    const next = new URLSearchParams(params);
+    if (value) next.set('league_id', String(value));
+    else next.delete('league_id');
+    navigate(`/similar?${next.toString()}`, { replace: true });
+  };
+
+  const updateTolerance = (value: number) => {
+    setCurrentTolerance(value);
+    const next = new URLSearchParams(params);
+    next.set('tolerance', String(value));
+    navigate(`/similar?${next.toString()}`, { replace: true });
+  };
 
   return (
     <div>
@@ -37,11 +69,34 @@ export default function SimilarPage() {
       </h2>
 
       {!isNaN(home) && (
-        <div className="mb-4">
+        <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
           <OddsBadge odds={{ home, draw, away }} />
-          <span className="text-xs text-gray-500 ml-3">
-            Tolérance : {tolerance}
-          </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-xs text-gray-400">Tolérance :</label>
+            <select
+              value={currentTolerance}
+              onChange={(e) => updateTolerance(Number(e.target.value))}
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+            >
+              <option value={0}>Exact (0.00)</option>
+              <option value={0.15}>Strict (0.15)</option>
+              <option value={0.3}>Normal (0.30)</option>
+              <option value={0.5}>Large (0.50)</option>
+              <option value={0.8}>Très large (0.80)</option>
+            </select>
+            <select
+              value={leagueId}
+              onChange={(e) => updateLeague(e.target.value ? Number(e.target.value) : '')}
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+            >
+              <option value="">Toutes les ligues</option>
+              {leagues.map((league) => (
+                <option key={league.league_id} value={league.league_id}>
+                  {league.league_name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -92,7 +147,9 @@ export default function SimilarPage() {
                 <div>
                   <span className="text-white font-medium">{m.matchName}</span>
                   <div className="text-xs text-gray-500 mt-0.5">
-                    {m.league_name} · R{m.round_number} · {formatDate(m.expected_start)}
+                    {m.league_name} · R{m.round_number}
+                    · <span className="text-gray-600">saison {m.event_category_id}</span>
+                    · {formatDate(m.expected_start)} {formatTime(m.expected_start)}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

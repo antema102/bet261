@@ -61,12 +61,15 @@ class Scheduler:
         """Tourne en arrière-plan et vérifie les résultats toutes les `interval` secondes."""
         logger.info("🔁 Thread résultats démarré (intervalle : %ds)", interval)
         while not self._stop_event.is_set():
+            start = time.time()
             try:
                 self.result_updater.run()
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  
                 logger.error("Erreur dans le thread résultats : %s", exc)
-            # Attend `interval` secondes ou jusqu'à l'arrêt demandé
-            self._stop_event.wait(interval)
+            elapsed = time.time() - start
+            wait_time = max(0.0, interval - elapsed)
+            if wait_time > 0:
+                self._stop_event.wait(wait_time)
 
     # ── API publique ──────────────────────────────────────────────────────────
 

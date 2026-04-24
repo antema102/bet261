@@ -1,11 +1,12 @@
 """Client HTTP réutilisable pour consommer l'API de sports virtuels."""
 
 import logging
+import time
 from typing import Optional
 
 import requests
 
-from config import DEFAULT_HEADERS, REQUEST_TIMEOUT
+from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, API_RETRIES, API_RETRY_DELAY
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +24,23 @@ class ApiClient:
         self.headers = headers or DEFAULT_HEADERS.copy()
         self.timeout = timeout
 
-    def get(self, path: str) -> Optional[dict]:
-        """Effectue une requête GET et retourne le JSON ou None en cas d'erreur."""
+    def get(self, path: str, retries: int = API_RETRIES) -> Optional[dict]:
+        """Effectue une requête GET avec retry automatique."""
         url = f"{self.base_url}{path}"
-        try:
-            response = requests.get(url, headers=self.headers, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as exc:
-            logger.error("Erreur lors de la récupération de %s : %s", url, exc)
-            return None
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.get(url, headers=self.headers, timeout=self.timeout)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as exc:
+                logger.warning(
+                    "Tentative %d/%d échouée pour %s : %s",
+                    attempt, retries, url, exc,
+                )
+                if attempt < retries:
+                    time.sleep(API_RETRY_DELAY)
+        logger.error("Échec définitif après %d tentatives pour %s", retries, url)
+        return None
 
     # --- Endpoints métier ---
 

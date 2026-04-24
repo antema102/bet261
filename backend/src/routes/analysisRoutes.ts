@@ -8,6 +8,19 @@ const router = Router();
 
 interface OddsTriple { home: number; draw: number; away: number }
 
+function getStoredMatches(oddsData: any): any[] {
+  if (Array.isArray(oddsData?.matches) && oddsData.matches.length > 0) {
+    return oddsData.matches;
+  }
+  if (Array.isArray(oddsData?.round?.matches)) {
+    return oddsData.round.matches;
+  }
+  if (Array.isArray(oddsData?.matches)) {
+    return oddsData.matches;
+  }
+  return [];
+}
+
 /**
  * Extrait les cotes 1X2 d'un match individuel (à l'intérieur de odds_data.round.matches[])
  */
@@ -28,19 +41,20 @@ function extract1X2(eventBetTypes: any[]): OddsTriple | null {
  */
 function extractRoundMatches(oddsData: any): Array<{
   matchId: number;
+  oddsId?: number;
   name: string;
   homeTeam: string;
   awayTeam: string;
   odds: OddsTriple;
 }> {
-  const roundObj = oddsData?.round ?? oddsData;
-  const matches = roundObj?.matches ?? [];
+  const matches = getStoredMatches(oddsData);
   const result: any[] = [];
   for (const m of matches) {
     const odds = extract1X2(m.eventBetTypes);
     if (odds) {
       result.push({
         matchId: m.id,
+        oddsId: m.odds_id,
         name: m.name ?? `${m.homeTeam?.name ?? '?'} vs ${m.awayTeam?.name ?? '?'}`,
         homeTeam: m.homeTeam?.name ?? '?',
         awayTeam: m.awayTeam?.name ?? '?',
@@ -70,17 +84,23 @@ function oddsDistance(a: OddsTriple, b: OddsTriple): number {
 function extractScore(
   resultData: any,
   matchId: number,
+  oddsId: number | undefined,
   index: number,
 ): { homeScore: number; awayScore: number } | null {
   if (!resultData?.matches) return null;
   // Tente par matchId d'abord
   let rm = resultData.matches.find((m: any) => m.id === matchId);
+  if (!rm && oddsId != null) {
+    rm = resultData.matches.find((m: any) => m.id === oddsId);
+  }
   // Sinon, par index (ordre dans le round)
   if (!rm && index < resultData.matches.length) {
     rm = resultData.matches[index];
   }
   if (!rm) return null;
-  // Score final = dernier goal, ou 0-0
+  if (typeof rm.homeScore === 'number' && typeof rm.awayScore === 'number') {
+    return { homeScore: rm.homeScore, awayScore: rm.awayScore };
+  }
   const goals = rm.goals ?? [];
   if (goals.length === 0) return { homeScore: 0, awayScore: 0 };
   const last = goals[goals.length - 1];
@@ -105,8 +125,12 @@ router.get('/similar', async (req: Request, res: Response) => {
     const home  = parseFloat(req.query.home as string);
     const draw  = parseFloat(req.query.draw as string);
     const away  = parseFloat(req.query.away as string);
-    const tolerance = parseFloat(req.query.tolerance as string) || 0.30;
+    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0.30;
     const limit = parseInt(req.query.limit as string) || 20;
+    const leagueId = req.query.league_id ? parseInt(req.query.league_id as string) : null;
+    const excludeLeagueId = req.query.exclude_league_id ? parseInt(req.query.exclude_league_id as string) : null;
+    const excludeEventCategoryId = req.query.exclude_event_category_id ? parseInt(req.query.exclude_event_category_id as string) : null;
+    const excludeRoundNumber = req.query.exclude_round_number ? parseInt(req.query.exclude_round_number as string) : null;
 
     if (isNaN(home) || isNaN(draw) || isNaN(away)) {
       res.status(400).json({ success: false, error: 'home, draw & away sont requis' });
@@ -120,6 +144,7 @@ router.get('/similar', async (req: Request, res: Response) => {
       status: 'finished',
       odds_data: { $ne: null },
       result_data: { $ne: null },
+      ...(leagueId ? { league_id: leagueId } : {}),
     }).lean();
 
     // Pour chaque round, extraire chaque sous-match et vérifier la distance
@@ -130,11 +155,16 @@ router.get('/similar', async (req: Request, res: Response) => {
       for (let i = 0; i < subMatches.length; i++) {
         const sm = subMatches[i];
         const dist = oddsDistance(target, sm.odds);
-        if (dist <= tolerance) {
-          const score = extractScore(round.result_data, sm.matchId, i);
+        const isExcluded =
+          excludeLeagueId !== null && round.league_id === excludeLeagueId &&
+          excludeEventCategoryId !== null && round.event_category_id === excludeEventCategoryId &&
+          excludeRoundNumber !== null && round.round_number === excludeRoundNumber;
+        if (dist <= tolerance && !isExcluded) {
+          const score = extractScore(round.result_data, sm.matchId, sm.oddsId, i);
           similar.push({
             league_name: round.league_name,
             league_id: round.league_id,
+            event_category_id: round.event_category_id,
             round_number: round.round_number,
             expected_start: round.expected_start,
             matchName: sm.name,
@@ -161,6 +191,7 @@ router.get('/similar', async (req: Request, res: Response) => {
     sendSuccess(res, {
       target: { home, draw, away },
       tolerance,
+      league_id: leagueId,
       total,
       stats: {
         homeWinPct: total ? Math.round((homeWins / total) * 100) : 0,
@@ -188,7 +219,7 @@ router.get('/similar', async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/daily', async (req: Request, res: Response) => {
   try {
-    const tolerance = parseFloat(req.query.tolerance as string) || 0.30;
+    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0.30;
     const leagueFilter = req.query.league_id
       ? { league_id: parseInt(req.query.league_id as string) }
       : {};
@@ -205,6 +236,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       status: 'finished',
       odds_data: { $ne: null },
       result_data: { $ne: null },
+      ...leagueFilter,
     }).lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
@@ -216,7 +248,7 @@ router.get('/daily', async (req: Request, res: Response) => {
     for (const round of finishedRounds) {
       const subMatches = extractRoundMatches(round.odds_data);
       for (let i = 0; i < subMatches.length; i++) {
-        const score = extractScore(round.result_data, subMatches[i].matchId, i);
+        const score = extractScore(round.result_data, subMatches[i].matchId, subMatches[i].oddsId, i);
         if (score) {
           historicalMatches.push({ odds: subMatches[i].odds, result: score });
         }
@@ -231,6 +263,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       const roundEntry: any = {
         league_name: round.league_name,
         league_id: round.league_id,
+        event_category_id: round.event_category_id,
         round_number: round.round_number,
         expected_start: round.expected_start,
         matches: [],

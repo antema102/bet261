@@ -4,7 +4,8 @@ import HistoryPage from './pages/HistoryPage';
 import SimilarPage from './pages/SimilarPage';
 
 const navItems = [
-  { to: '/', label: '📊 Prédictions du jour' },
+  { to: '/', label: '📊 Prédictions' },
+  { to: '/similar', label: '🔍 Matchs similaires' },
   { to: '/history', label: '📜 Historique' },
 ];
 

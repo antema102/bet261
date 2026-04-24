@@ -74,7 +74,8 @@ class BackendClient:
         expected_start: str | None,
         odds_data: dict,
     ) -> bool:
-        """Crée ou met à jour un round avec ses cotes (upsert par league_id + round_number)."""
+        """Crée ou met à jour un round avec ses cotes (upsert par league_id + event_category_id)."""
+        # event_category_id est unique par occurrence de round → préserve l'historique
         return self.post("matches/upsert", {
             "league_name": league_name,
             "league_id": league_id,
@@ -84,11 +85,18 @@ class BackendClient:
             "odds_data": odds_data,
         })
 
-    def update_result(self, league_id: int, round_number: int, result_data: dict) -> bool:
+    def update_result(
+        self,
+        league_id: int,
+        round_number: int,
+        result_data: dict,
+        event_category_id: int | None = None,
+    ) -> bool:
         """Met à jour le résultat d'un round terminé (status -> 'finished')."""
         return self.put("matches/update-result", {
             "league_id": league_id,
             "round_number": round_number,
+            "event_category_id": event_category_id,
             "result_data": result_data,
         })
 

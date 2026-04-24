@@ -1,26 +1,45 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type DailyResponse, type DailyRound } from '../api';
-import { OddsBadge, ProbBar, Spinner, ErrorMsg, formatTime } from '../components/ui';
+import { api, type DailyResponse, type DailyRound, type LeagueOption } from '../api';
+import { OddsBadge, ProbBar, Spinner, ErrorMsg, formatDate, formatTime } from '../components/ui';
 
 export default function DailyPage() {
   const [data, setData] = useState<DailyResponse | null>(null);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tolerance, setTolerance] = useState(0.3);
+  const [leagueId, setLeagueId] = useState<number | ''>('');
   const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
     setError('');
-    api.getDaily(tolerance)
-      .then(setData)
+
+    Promise.all([
+      api.getDaily(tolerance, leagueId || undefined),
+      api.getLeagues(),
+    ])
+      .then(([dailyData, leaguesData]) => {
+        setData(dailyData);
+        setLeagues(leaguesData);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [tolerance]);
+  }, [tolerance, leagueId]);
 
-  const goSimilar = (home: number, draw: number, away: number) => {
-    navigate(`/similar?home=${home}&draw=${draw}&away=${away}&tolerance=${tolerance}`);
+  const goSimilar = (home: number, draw: number, away: number, leagueId_: number, eventCategoryId: number, roundNumber: number) => {
+    const params = new URLSearchParams({
+      home: String(home),
+      draw: String(draw),
+      away: String(away),
+      tolerance: String(tolerance),
+      exclude_league_id: String(leagueId_),
+      exclude_event_category_id: String(eventCategoryId),
+      exclude_round_number: String(roundNumber),
+    });
+    if (leagueId) params.set('league_id', String(leagueId));
+    navigate(`/similar?${params.toString()}`);
   };
 
   return (
@@ -30,12 +49,25 @@ export default function DailyPage() {
           📊 Prédictions du jour
         </h2>
         <div className="flex items-center gap-2">
+          <select
+            value={leagueId}
+            onChange={(e) => setLeagueId(e.target.value ? Number(e.target.value) : '')}
+            className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+          >
+            <option value="">Toutes les ligues</option>
+            {leagues.map((league) => (
+              <option key={league.league_id} value={league.league_id}>
+                {league.league_name}
+              </option>
+            ))}
+          </select>
           <label className="text-sm text-gray-400">Tolérance :</label>
           <select
             value={tolerance}
             onChange={(e) => setTolerance(Number(e.target.value))}
             className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
           >
+            <option value={0}>Exact (0.00)</option>
             <option value={0.15}>Strict (0.15)</option>
             <option value={0.3}>Normal (0.30)</option>
             <option value={0.5}>Large (0.50)</option>
@@ -67,7 +99,7 @@ function RoundCard({
   onClickSimilar,
 }: {
   round: DailyRound;
-  onClickSimilar: (h: number, d: number, a: number) => void;
+  onClickSimilar: (h: number, d: number, a: number, leagueId: number, eventCategoryId: number, roundNumber: number) => void;
 }) {
   return (
     <div className="mb-6 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -78,7 +110,7 @@ function RoundCard({
           <span className="text-gray-500 text-sm">Round {round.round_number}</span>
         </div>
         <span className="text-sm text-gray-400">
-          🕐 {formatTime(round.expected_start)}
+          {formatDate(round.expected_start)} · 🕐 {formatTime(round.expected_start)}
         </span>
       </div>
 
@@ -105,7 +137,7 @@ function RoundCard({
                 {match.prediction.sampleSize} match(s)
               </span>
               <button
-                onClick={() => onClickSimilar(match.odds.home, match.odds.draw, match.odds.away)}
+                onClick={() => onClickSimilar(match.odds.home, match.odds.draw, match.odds.away, round.league_id, round.event_category_id, round.round_number)}
                 className="text-xs px-2 py-1 rounded bg-gray-800 text-emerald-400 hover:bg-gray-700 transition"
               >
                 Voir similaires →

@@ -32,6 +32,7 @@ export interface MatchPrediction {
 export interface DailyRound {
   league_name: string;
   league_id: number;
+  event_category_id: number;
   round_number: number;
   expected_start: string;
   matches: MatchPrediction[];
@@ -43,9 +44,15 @@ export interface DailyResponse {
   rounds: DailyRound[];
 }
 
+export interface LeagueOption {
+  league_id: number;
+  league_name: string;
+}
+
 export interface SimilarMatch {
   league_name: string;
   league_id: number;
+  event_category_id: number;
   round_number: number;
   expected_start: string;
   matchName: string;
@@ -59,6 +66,7 @@ export interface SimilarMatch {
 export interface SimilarResponse {
   target: OddsTriple;
   tolerance: number;
+  league_id?: number | null;
   total: number;
   stats: {
     homeWinPct: number;
@@ -98,30 +106,44 @@ export const api = {
   /** Matchs à venir avec prédictions basées sur l'historique */
   getDaily: (tolerance?: number, leagueId?: number) => {
     const params = new URLSearchParams();
-    if (tolerance) params.set('tolerance', String(tolerance));
+    if (tolerance !== undefined) params.set('tolerance', String(tolerance));
     if (leagueId) params.set('league_id', String(leagueId));
     const qs = params.toString();
     return request<DailyResponse>(`/analysis/daily${qs ? `?${qs}` : ''}`);
   },
 
   /** Matchs historiques avec cotes similaires */
-  getSimilar: (home: number, draw: number, away: number, tolerance?: number, limit?: number) => {
+  getSimilar: (
+    home: number, draw: number, away: number,
+    tolerance?: number, limit?: number, leagueId?: number,
+    excludeLeagueId?: number, excludeEventCategoryId?: number, excludeRoundNumber?: number
+  ) => {
     const params = new URLSearchParams({
       home: String(home),
       draw: String(draw),
       away: String(away),
     });
-    if (tolerance) params.set('tolerance', String(tolerance));
+    if (tolerance !== undefined) params.set('tolerance', String(tolerance));
     if (limit) params.set('limit', String(limit));
+    if (leagueId) params.set('league_id', String(leagueId));
+    if (excludeLeagueId !== undefined) params.set('exclude_league_id', String(excludeLeagueId));
+    if (excludeEventCategoryId !== undefined) params.set('exclude_event_category_id', String(excludeEventCategoryId));
+    if (excludeRoundNumber !== undefined) params.set('exclude_round_number', String(excludeRoundNumber));
     return request<SimilarResponse>(`/analysis/similar?${params}`);
   },
 
   /** Tous les matchs (ou filtrés par ligue) */
-  getMatches: (leagueId?: number) =>
-    request<MatchDocument[]>(`/matches${leagueId ? `/${leagueId}` : ''}`),
+  getMatches: (options?: { leagueId?: number; status?: 'upcoming' | 'finished'; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.leagueId) params.set('league_id', String(options.leagueId));
+    if (options?.status) params.set('status', options.status);
+    if (options?.limit) params.set('limit', String(options.limit));
+    const qs = params.toString();
+    return request<MatchDocument[]>(`/matches${qs ? `?${qs}` : ''}`);
+  },
 
   /** Ligues disponibles */
-  getLeagues: () => request<string[]>('/leagues'),
+  getLeagues: () => request<LeagueOption[]>('/leagues/options'),
 
   /** Statistiques globales */
   getStats: () => request<StatsData>('/leagues/stats'),

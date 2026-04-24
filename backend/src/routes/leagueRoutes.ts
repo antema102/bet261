@@ -7,6 +7,26 @@ import { sendSuccess, sendError } from '../utils/response';
 
 const router = Router();
 
+// GET /api/leagues/options — récupérer les ligues avec id + nom
+router.get('/options', async (_req: Request, res: Response) => {
+  try {
+    const leagues = await Match.aggregate([
+      {
+        $group: {
+          _id: '$league_id',
+          league_id: { $first: '$league_id' },
+          league_name: { $first: '$league_name' },
+        },
+      },
+      { $sort: { league_name: 1 } },
+      { $project: { _id: 0, league_id: 1, league_name: 1 } },
+    ]);
+    sendSuccess(res, leagues);
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 // GET /api/leagues — récupérer toutes les ligues disponibles
 router.get('/', async (_req: Request, res: Response) => {
   try {
