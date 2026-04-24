@@ -1,7 +1,10 @@
 const API_BASE = '/api';
 
-async function request<T>(url: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`);
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body = await res.json();
   if (!body.success) throw new Error(body.error ?? 'Erreur inconnue');
@@ -16,7 +19,18 @@ export interface OddsTriple {
   away: number;
 }
 
+export interface SimilarMatchBrief {
+  league_name: string;
+  matchName: string;
+  homeTeam: string;
+  awayTeam: string;
+  odds: OddsTriple;
+  distance: number;
+  result: { homeScore: number; awayScore: number };
+}
+
 export interface MatchPrediction {
+  matchId?: number;
   name: string;
   homeTeam: string;
   awayTeam: string;
@@ -27,6 +41,7 @@ export interface MatchPrediction {
     drawPct: number | null;
     awayWinPct: number | null;
   };
+  similarMatches?: SimilarMatchBrief[];
 }
 
 export interface DailyRound {
@@ -100,6 +115,32 @@ export interface StatsData {
   last_update: { timestamp: string } | null;
 }
 
+export interface PredictionMatch {
+  matchId?: number;
+  matchName: string;
+  homeTeam: string;
+  awayTeam: string;
+  odds: OddsTriple;
+  prediction: {
+    sampleSize: number;
+    homeWinPct: number | null;
+    drawPct: number | null;
+    awayWinPct: number | null;
+  };
+  result: { homeScore: number; awayScore: number } | null;
+}
+
+export interface PredictionRound {
+  league_name: string;
+  league_id: number;
+  round_number: number;
+  event_category_id: number;
+  expected_start: string;
+  tolerance: number;
+  status: 'upcoming' | 'finished';
+  matches: PredictionMatch[];
+}
+
 // ─── API Calls ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -147,4 +188,35 @@ export const api = {
 
   /** Statistiques globales */
   getStats: () => request<StatsData>('/leagues/stats'),
+
+  /** Sauvegarder la prédiction d'un round */
+  savePrediction: (data: {
+    league_name: string;
+    league_id: number;
+    round_number: number;
+    event_category_id: number;
+    expected_start: string;
+    tolerance: number;
+    matches: Array<{
+      matchId?: number;
+      matchName: string;
+      homeTeam: string;
+      awayTeam: string;
+      odds: OddsTriple;
+      prediction: MatchPrediction['prediction'];
+    }>;
+  }) =>
+    request<{ saved: boolean }>('/predictions/upsert', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Récupérer les prédictions sauvegardées (rounds terminés) */
+  getPredictions: (tolerance: number, leagueId?: number, limit?: number, status?: 'finished' | 'upcoming' | 'all') => {
+    const params = new URLSearchParams({ tolerance: String(tolerance) });
+    if (leagueId) params.set('league_id', String(leagueId));
+    if (limit) params.set('limit', String(limit));
+    if (status) params.set('status', status);
+    return request<PredictionRound[]>(`/predictions?${params}`);
+  },
 };

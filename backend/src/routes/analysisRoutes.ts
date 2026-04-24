@@ -241,6 +241,13 @@ router.get('/daily', async (req: Request, res: Response) => {
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
     const historicalMatches: Array<{
+      league_name: string;
+      league_id: number;
+      round_number: number;
+      event_category_id: number;
+      matchName: string;
+      homeTeam: string;
+      awayTeam: string;
       odds: OddsTriple;
       result: { homeScore: number; awayScore: number };
     }> = [];
@@ -250,7 +257,17 @@ router.get('/daily', async (req: Request, res: Response) => {
       for (let i = 0; i < subMatches.length; i++) {
         const score = extractScore(round.result_data, subMatches[i].matchId, subMatches[i].oddsId, i);
         if (score) {
-          historicalMatches.push({ odds: subMatches[i].odds, result: score });
+          historicalMatches.push({
+            league_name: round.league_name,
+            league_id: round.league_id,
+            round_number: round.round_number,
+            event_category_id: (round as any).event_category_id,
+            matchName: subMatches[i].name,
+            homeTeam: subMatches[i].homeTeam,
+            awayTeam: subMatches[i].awayTeam,
+            odds: subMatches[i].odds,
+            result: score,
+          });
         }
       }
     }
@@ -270,16 +287,28 @@ router.get('/daily', async (req: Request, res: Response) => {
       };
 
       for (const sm of subMatches) {
-        const similars = historicalMatches.filter(
-          h => oddsDistance(sm.odds, h.odds) <= tolerance,
-        );
+        const similarsWithDist = historicalMatches
+          .map(h => ({ ...h, distance: oddsDistance(sm.odds, h.odds) }))
+          .filter(h => h.distance <= tolerance)
+          .sort((a, b) => a.distance - b.distance);
 
-        const total = similars.length;
-        const homeWins = similars.filter(s => s.result.homeScore > s.result.awayScore).length;
-        const draws    = similars.filter(s => s.result.homeScore === s.result.awayScore).length;
-        const awayWins = similars.filter(s => s.result.homeScore < s.result.awayScore).length;
+        const total = similarsWithDist.length;
+        const homeWins = similarsWithDist.filter(s => s.result.homeScore > s.result.awayScore).length;
+        const draws    = similarsWithDist.filter(s => s.result.homeScore === s.result.awayScore).length;
+        const awayWins = similarsWithDist.filter(s => s.result.homeScore < s.result.awayScore).length;
+
+        const top5 = similarsWithDist.slice(0, 5).map(h => ({
+          league_name: h.league_name,
+          matchName:   h.matchName,
+          homeTeam:    h.homeTeam,
+          awayTeam:    h.awayTeam,
+          odds:        h.odds,
+          distance:    Math.round(h.distance * 1000) / 1000,
+          result:      h.result,
+        }));
 
         roundEntry.matches.push({
+          matchId: sm.matchId,
           name: sm.name,
           homeTeam: sm.homeTeam,
           awayTeam: sm.awayTeam,
@@ -290,6 +319,7 @@ router.get('/daily', async (req: Request, res: Response) => {
             drawPct:    total ? Math.round((draws / total) * 100) : null,
             awayWinPct: total ? Math.round((awayWins / total) * 100) : null,
           },
+          similarMatches: top5,
         });
       }
 

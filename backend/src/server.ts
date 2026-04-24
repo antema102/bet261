@@ -9,6 +9,7 @@ import resultRoutes from './routes/resultRoutes';
 import rankingRoutes from './routes/rankingRoutes';
 import leagueRoutes from './routes/leagueRoutes';
 import analysisRoutes from './routes/analysisRoutes';
+import predictionRoutes from './routes/predictionRoutes';
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ app.use('/api/results', resultRoutes);
 app.use('/api/rankings', rankingRoutes);
 app.use('/api/leagues', leagueRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/predictions', predictionRoutes);
 
 // Route de santé
 app.get('/health', (_req, res) => {

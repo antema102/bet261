@@ -9,7 +9,7 @@ export default function SimilarPage() {
   const home = parseFloat(params.get('home') ?? '');
   const draw = parseFloat(params.get('draw') ?? '');
   const away = parseFloat(params.get('away') ?? '');
-  const tolerance = parseFloat(params.get('tolerance') ?? '0.3');
+  const tolerance = parseFloat(params.get('tolerance') ?? '0');
   const queryLeagueId = parseFloat(params.get('league_id') ?? '');
   const excludeLeagueId = params.get('exclude_league_id') ? parseInt(params.get('exclude_league_id')!) : undefined;
   const excludeEventCategoryId = params.get('exclude_event_category_id') ? parseInt(params.get('exclude_event_category_id')!) : undefined;
@@ -20,7 +20,7 @@ export default function SimilarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [leagueId, setLeagueId] = useState<number | ''>(isNaN(queryLeagueId) ? '' : queryLeagueId);
-  const [currentTolerance, setCurrentTolerance] = useState(isNaN(tolerance) ? 0.3 : tolerance);
+  const [currentTolerance, setCurrentTolerance] = useState(isNaN(tolerance) ? 0 : tolerance);
 
   useEffect(() => {
     if (isNaN(home) || isNaN(draw) || isNaN(away)) {

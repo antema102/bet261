@@ -8,7 +8,7 @@ export default function DailyPage() {
   const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tolerance, setTolerance] = useState(0.3);
+  const [tolerance, setTolerance] = useState(0);
   const [leagueId, setLeagueId] = useState<number | ''>('');
   const navigate = useNavigate();
 
@@ -23,6 +23,26 @@ export default function DailyPage() {
       .then(([dailyData, leaguesData]) => {
         setData(dailyData);
         setLeagues(leaguesData);
+
+        // Auto-sauvegarde des prédictions dans MongoDB
+        dailyData.rounds.forEach((round) => {
+          api.savePrediction({
+            league_name:       round.league_name,
+            league_id:         round.league_id,
+            round_number:      round.round_number,
+            event_category_id: round.event_category_id,
+            expected_start:    round.expected_start,
+            tolerance,
+            matches: round.matches.map((m) => ({
+              matchId:   m.matchId,
+              matchName: m.name,
+              homeTeam:  m.homeTeam,
+              awayTeam:  m.awayTeam,
+              odds:      m.odds,
+              prediction: m.prediction,
+            })),
+          }).catch(() => {}); // silencieux, non-bloquant
+        });
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -117,35 +137,107 @@ function RoundCard({
       {/* Matchs */}
       <div className="divide-y divide-gray-800">
         {round.matches.map((match, i) => (
-          <div key={i} className="px-4 py-3 hover:bg-gray-800/30 transition">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-white font-medium">
-                {match.homeTeam} <span className="text-gray-500">vs</span> {match.awayTeam}
-              </span>
-              <OddsBadge odds={match.odds} />
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <ProbBar
-                  homeWinPct={match.prediction.homeWinPct}
-                  drawPct={match.prediction.drawPct}
-                  awayWinPct={match.prediction.awayWinPct}
-                />
-              </div>
-              <span className="text-xs text-gray-500 min-w-[80px] text-right">
-                {match.prediction.sampleSize} match(s)
-              </span>
-              <button
-                onClick={() => onClickSimilar(match.odds.home, match.odds.draw, match.odds.away, round.league_id, round.event_category_id, round.round_number)}
-                className="text-xs px-2 py-1 rounded bg-gray-800 text-emerald-400 hover:bg-gray-700 transition"
-              >
-                Voir similaires →
-              </button>
-            </div>
-          </div>
+          <MatchCard
+            key={i}
+            match={match}
+            onClickSimilar={() => onClickSimilar(match.odds.home, match.odds.draw, match.odds.away, round.league_id, round.event_category_id, round.round_number)}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+function MatchCard({
+  match,
+  onClickSimilar,
+}: {
+  match: DailyRound['matches'][0];
+  onClickSimilar: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasSimilars = (match.similarMatches?.length ?? 0) > 0;
+
+  return (
+    <div>
+      {/* Ligne principale */}
+      <div className="px-4 py-3 hover:bg-gray-800/30 transition">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-white font-medium">
+            {match.homeTeam} <span className="text-gray-500">vs</span> {match.awayTeam}
+          </span>
+          <OddsBadge odds={match.odds} />
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <ProbBar
+              homeWinPct={match.prediction.homeWinPct}
+              drawPct={match.prediction.drawPct}
+              awayWinPct={match.prediction.awayWinPct}
+            />
+          </div>
+          <span className="text-xs text-gray-500 whitespace-nowrap">
+            {match.prediction.sampleSize} similaire(s)
+          </span>
+          {hasSimilars && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs px-2 py-1 rounded bg-gray-800/80 text-gray-400 hover:text-white transition"
+            >
+              {expanded ? '▲ Masquer' : '▼ Détails'}
+            </button>
+          )}
+          <button
+            onClick={onClickSimilar}
+            className="text-xs px-2 py-1 rounded bg-gray-800 text-emerald-400 hover:bg-gray-700 transition"
+          >
+            Voir tous →
+          </button>
+        </div>
+      </div>
+
+      {/* Similaires en-dessous */}
+      {expanded && hasSimilars && (
+        <div className="border-t border-gray-800/60 bg-gray-950/50 divide-y divide-gray-800/40">
+          <div className="px-4 py-1.5 text-xs text-gray-600 uppercase tracking-wider font-semibold">
+            Matchs similaires utilisés pour la prédiction
+          </div>
+          {match.similarMatches!.map((sm, j) => {
+            const outcome =
+              sm.result.homeScore > sm.result.awayScore ? 'home'
+              : sm.result.homeScore < sm.result.awayScore ? 'away'
+              : 'draw';
+            return (
+              <div key={j} className="px-4 py-2 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-emerald-500/70 shrink-0">{sm.league_name.replace(/_/g, ' ')}</span>
+                  <span className="text-gray-400 truncate">
+                    {sm.homeTeam} <span className="text-gray-600">vs</span> {sm.awayTeam}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-2">
+                  <div className="flex gap-1 font-mono">
+                    <span className="text-emerald-400">{sm.odds.home.toFixed(2)}</span>
+                    <span className="text-yellow-400">{sm.odds.draw.toFixed(2)}</span>
+                    <span className="text-red-400">{sm.odds.away.toFixed(2)}</span>
+                  </div>
+                  <span className={`font-bold min-w-[40px] text-center ${
+                    outcome === 'home' ? 'text-emerald-400'
+                    : outcome === 'away' ? 'text-red-400'
+                    : 'text-yellow-400'
+                  }`}>
+                    {sm.result.homeScore} - {sm.result.awayScore}
+                  </span>
+                  {sm.distance > 0 && (
+                    <span className="text-gray-600">d={sm.distance.toFixed(2)}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
