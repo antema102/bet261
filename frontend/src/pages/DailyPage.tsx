@@ -8,7 +8,7 @@ export default function DailyPage() {
   const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tolerance, setTolerance] = useState(0);
+  const tolerance = 0; // Cotes exactes uniquement
   const [leagueId, setLeagueId] = useState<number | ''>('');
   const navigate = useNavigate();
 
@@ -24,25 +24,25 @@ export default function DailyPage() {
         setData(dailyData);
         setLeagues(leaguesData);
 
-        // Auto-sauvegarde des prédictions dans MongoDB
-        dailyData.rounds.forEach((round) => {
-          api.savePrediction({
-            league_name:       round.league_name,
-            league_id:         round.league_id,
-            round_number:      round.round_number,
-            event_category_id: round.event_category_id,
-            expected_start:    round.expected_start,
-            tolerance,
-            matches: round.matches.map((m) => ({
-              matchId:   m.matchId,
-              matchName: m.name,
-              homeTeam:  m.homeTeam,
-              awayTeam:  m.awayTeam,
-              odds:      m.odds,
-              prediction: m.prediction,
-            })),
-          }).catch(() => {}); // silencieux, non-bloquant
-        });
+        // Auto-sauvegarde des prédictions dans MongoDB (désactivée temporairement)
+        // dailyData.rounds.forEach((round) => {
+        //   api.savePrediction({
+        //     league_name:       round.league_name,
+        //     league_id:         round.league_id,
+        //     round_number:      round.round_number,
+        //     event_category_id: round.event_category_id,
+        //     expected_start:    round.expected_start,
+        //     tolerance,
+        //     matches: round.matches.map((m) => ({
+        //       matchId:   m.matchId,
+        //       matchName: m.name,
+        //       homeTeam:  m.homeTeam,
+        //       awayTeam:  m.awayTeam,
+        //       odds:      m.odds,
+        //       prediction: m.prediction,
+        //     })),
+        //   }).catch(() => {}); // silencieux, non-bloquant
+        // });
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -81,18 +81,7 @@ export default function DailyPage() {
               </option>
             ))}
           </select>
-          <label className="text-sm text-gray-400">Tolérance :</label>
-          <select
-            value={tolerance}
-            onChange={(e) => setTolerance(Number(e.target.value))}
-            className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-          >
-            <option value={0}>Exact (0.00)</option>
-            <option value={0.15}>Strict (0.15)</option>
-            <option value={0.3}>Normal (0.30)</option>
-            <option value={0.5}>Large (0.50)</option>
-            <option value={0.8}>Très large (0.80)</option>
-          </select>
+
         </div>
       </div>
 

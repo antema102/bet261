@@ -125,7 +125,7 @@ router.get('/similar', async (req: Request, res: Response) => {
     const home  = parseFloat(req.query.home as string);
     const draw  = parseFloat(req.query.draw as string);
     const away  = parseFloat(req.query.away as string);
-    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0.30;
+    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0;
     const limit = parseInt(req.query.limit as string) || 20;
     const leagueId = req.query.league_id ? parseInt(req.query.league_id as string) : null;
     const excludeLeagueId = req.query.exclude_league_id ? parseInt(req.query.exclude_league_id as string) : null;
@@ -219,7 +219,7 @@ router.get('/similar', async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/daily', async (req: Request, res: Response) => {
   try {
-    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0.30;
+    const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0;
     const leagueFilter = req.query.league_id
       ? { league_id: parseInt(req.query.league_id as string) }
       : {};
@@ -229,15 +229,22 @@ router.get('/daily', async (req: Request, res: Response) => {
       status: 'upcoming',
       odds_data: { $ne: null },
       ...leagueFilter,
-    }).sort({ expected_start: 1 }).lean();
+    })
+      .select('league_name league_id event_category_id round_number expected_start odds_data')
+      .sort({ expected_start: 1 })
+      .lean();
 
-    // 2. Historique finished pour la comparaison
+    // 2. Historique finished pour la comparaison (limité aux 800 derniers pour la perf)
     const finishedRounds = await Match.find({
       status: 'finished',
       odds_data: { $ne: null },
       result_data: { $ne: null },
       ...leagueFilter,
-    }).lean();
+    })
+      .select('league_name league_id event_category_id round_number odds_data result_data')
+      .sort({ expected_start: -1 })
+      .limit(800)
+      .lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
     const historicalMatches: Array<{
