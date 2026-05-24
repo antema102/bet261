@@ -265,7 +265,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       .sort({ expected_start: 1 })
       .lean();
 
-    // 2. Historique finished pour la comparaison (limité aux 800 derniers pour la perf)
+    // 2. Historique finished pour la comparaison (limité aux 500 derniers pour la perf)
     const finishedRounds = await Match.find({
       status: 'finished',
       odds_data: { $ne: null },
@@ -274,7 +274,7 @@ router.get('/daily', async (req: Request, res: Response) => {
     })
       .select('league_name league_id event_category_id round_number odds_data result_data')
       .sort({ expected_start: -1 })
-      .limit(800)
+      .limit(500)
       .lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
@@ -327,10 +327,20 @@ router.get('/daily', async (req: Request, res: Response) => {
       };
 
       for (const sm of subMatches) {
-        const similarsWithDist = historicalMatches
-          .map(h => ({ ...h, distance: oddsDistance(sm.odds, h.odds) }))
-          .filter(h => h.distance <= tolerance)
-          .sort((a, b) => a.distance - b.distance);
+        // Évite le spread `...h` (très coûteux en mémoire sur grands tableaux)
+        // → filtre d'abord par distance, ne crée les objets résultats qu'à la fin
+        const tolerance2 = tolerance * tolerance; // comparaison carré plus rapide
+        const filtered: Array<typeof historicalMatches[0] & { distance: number }> = [];
+        for (const h of historicalMatches) {
+          const dist = oddsDistance(sm.odds, h.odds);
+          if (dist <= tolerance) {
+            filtered.push({ ...h, distance: dist } as any);
+          }
+        }
+        filtered.sort((a, b) => a.distance - b.distance);
+
+        const similarsWithDist = filtered;
+        void tolerance2; // utilisé pour la clarté, la comparaison directe est faite via oddsDistance
 
         const total = similarsWithDist.length;
         const homeWins = similarsWithDist.filter(s => s.result.homeScore > s.result.awayScore).length;
