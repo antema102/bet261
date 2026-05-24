@@ -68,15 +68,34 @@ class ResultUpdater:
         )
 
     @staticmethod
+    def _team_key(m: dict) -> str:
+        """Clé de matching basée sur homeTeam + awayTeam (insensible à la casse)."""
+        home_obj = m.get("homeTeam") or {}
+        away_obj = m.get("awayTeam") or {}
+        h = (str(home_obj.get("name") or "") if isinstance(home_obj, dict) else str(home_obj or "")).strip().lower()
+        a = (str(away_obj.get("name") or "") if isinstance(away_obj, dict) else str(away_obj or "")).strip().lower()
+        return f"{h}|{a}"
+
+    @staticmethod
     def _enrich(result_matches: list, odds_data: dict | None, source: str) -> dict:
         """Fusionne les scores (result_matches) avec les métadonnées d'odds_data.
 
-        Matching :
-          1. Par ID direct  → fonctionne avec /{league_id}/results (mêmes IDs)
-          2. Par index       → fallback playout (IDs simulation ≠ IDs odds)
+        Matching (dans l'ordre de fiabilité) :
+          1. Par ID direct    → fonctionne avec /{league_id}/results (mêmes IDs)
+          2. Par noms d'équipe → robuste même quand les IDs diffèrent (playout)
+          3. Par index         → dernier recours positionnel (risqué)
         """
         odds_list = ResultUpdater._odds_list(odds_data)
-        odds_by_id: dict[int, dict] = {m["id"]: m for m in odds_list if m.get("id")}
+        odds_by_id:    dict[int, dict] = {m["id"]: m for m in odds_list if m.get("id")}
+        odds_by_teams: dict[str, dict] = {}
+        for m in odds_list:
+            key = ResultUpdater._team_key(m)
+            if key != "|":
+                odds_by_teams[key] = m
+
+        # Sécurité : si le fallback positionnel est nécessaire, on l'accepte
+        # SEULEMENT si le nombre de matchs est identique des deux côtés.
+        counts_match = len(result_matches) == len(odds_list)
 
         enriched = []
         for idx, rm in enumerate(result_matches):
@@ -89,10 +108,44 @@ class ResultUpdater:
             if home_score is None or away_score is None:
                 home_score, away_score = ResultUpdater._final_score(goals)
 
-            # Matching avec odds_data : ID d'abord, index ensuite
+            # ── Stratégie 1 : matching par ID ────────────────────────────────
             odds_match: dict = odds_by_id.get(match_id, {})
-            if not odds_match and idx < len(odds_list):
-                odds_match = odds_list[idx]
+            match_method = "id"
+
+            # ── Stratégie 2 : matching par noms d'équipes ────────────────────
+            # Les résultats bruts n'ont pas toujours homeTeam/awayTeam,
+            # on essaie quand même (fonctionne avec /results mais pas /playout).
+            if not odds_match:
+                team_key = ResultUpdater._team_key(rm)
+                if team_key != "|":  # clé valide = champs présents
+                    odds_match = odds_by_teams.get(team_key, {})
+                    if odds_match:
+                        match_method = "name"
+                        logger.debug(
+                            "Matching par noms pour match_id=%s (%s)",
+                            match_id, team_key,
+                        )
+
+            # ── Stratégie 3 : fallback positionnel ───────────────────────────
+            # Accepté UNIQUEMENT si les deux listes ont le même nombre de matchs
+            # (garantit que l'ordre API est cohérent entre résultats et odds_data).
+            if not odds_match:
+                if counts_match and idx < len(odds_list):
+                    odds_match = odds_list[idx]
+                    match_method = "index"
+                    logger.warning(
+                        "Matching positionnel (index %d) pour match_id=%s — "
+                        "résultats sans noms d'équipes (source playout). "
+                        "Scores corrects, noms depuis odds_data[%d].",
+                        idx, match_id, idx,
+                    )
+                else:
+                    logger.error(
+                        "Matching impossible pour match_id=%s (idx=%d) — "
+                        "nb résultats=%d ≠ nb odds=%d, match ignoré.",
+                        match_id, idx, len(result_matches), len(odds_list),
+                    )
+                    continue  # ← ne stocke PAS un résultat incorrect
 
             home_team = odds_match.get("homeTeam")
             away_team = odds_match.get("awayTeam")
@@ -100,37 +153,61 @@ class ResultUpdater:
             away_name = (away_team.get("name") if isinstance(away_team, dict) else str(away_team or "")) or "Away"
 
             enriched.append({
-                "id":        match_id,
-                "name":      odds_match.get("name") or f"{home_name} vs {away_name}",
-                "homeTeam":  home_name,
-                "awayTeam":  away_name,
-                "goals":     goals,
-                "homeScore": int(home_score),
-                "awayScore": int(away_score),
-                "_source":   source,
+                "id":           match_id,
+                "name":         odds_match.get("name") or f"{home_name} vs {away_name}",
+                "homeTeam":     home_name,
+                "awayTeam":     away_name,
+                "goals":        goals,
+                "homeScore":    int(home_score),
+                "awayScore":    int(away_score),
+                "_source":      source,
+                "_matchMethod": match_method,
             })
 
         return {"matches": enriched}
 
-    def _results_from_league_api(self, league_id: int, round_number: int) -> list | None:
+    def _results_from_league_api(
+        self,
+        league_id: int,
+        round_number: int,
+        event_category_id: int | None = None,
+    ) -> list | None:
         """Récupère les résultats via /{league_id}/results.
 
         Cet endpoint utilise le même système d'IDs que /{league_id}/matches,
         contrairement à /playout qui utilise des IDs de simulation différents.
         Retourne la liste de matchs du round si trouvé, None sinon.
+
+        Filtre par event_category_id si disponible pour éviter les collisions
+        de round_number entre deux saisons.
         """
         data = self.api.get_results(league_id, skip=0, take=10)
         if not data:
             return None
 
+        def _round_matches(rnd: dict) -> list | None:
+            """Vérifie roundNumber (+ eventCategoryId si dispo) et retourne les matchs."""
+            rn = rnd.get("roundNumber") or rnd.get("round_number")
+            if rn is None or int(rn) != round_number:
+                return None
+            # Filtre supplémentaire par event_category_id si l'API le fournit
+            if event_category_id is not None:
+                ec = rnd.get("eventCategoryId") or rnd.get("event_category_id")
+                if ec is not None and int(ec) != event_category_id:
+                    logger.debug(
+                        "Round %d ignoré : event_category_id %s ≠ attendu %s",
+                        round_number, ec, event_category_id,
+                    )
+                    return None
+            matches = rnd.get("matches", [])
+            return matches if matches else None
+
         # Structure 1 : {"rounds": [{"roundNumber": 18, "matches": [...]}]}
         for rnd in data.get("rounds", []):
-            rn = rnd.get("roundNumber") or rnd.get("round_number")
-            if rn is not None and int(rn) == round_number:
-                matches = rnd.get("matches", [])
-                if matches:
-                    logger.debug("source /results : round %d trouvé (%d matchs)", round_number, len(matches))
-                    return matches
+            matches = _round_matches(rnd)
+            if matches is not None:
+                logger.debug("source /results : round %d trouvé (%d matchs, IDs corrects)", round_number, len(matches))
+                return matches
 
         # Structure 2 : liste directe [{..., "round": "18", ...}]
         if isinstance(data, list):
@@ -140,11 +217,18 @@ class ResultUpdater:
 
         # Structure 3 : {"data": {"rounds": [...]}}
         for rnd in (data.get("data") or {}).get("rounds", []):
-            rn = rnd.get("roundNumber") or rnd.get("round_number")
-            if rn is not None and int(rn) == round_number:
-                matches = rnd.get("matches", [])
-                if matches:
-                    return matches
+            matches = _round_matches(rnd)
+            if matches is not None:
+                return matches
+
+        # Structure 4 : {"matches": [...]} (réponse directe sans wrapper rounds)
+        top_matches = data.get("matches")
+        if isinstance(top_matches, list) and top_matches:
+            logger.debug(
+                "source /results : structure {'matches':[...]} détectée pour ligue %d R%d",
+                league_id, round_number,
+            )
+            return top_matches
 
         return None
 
@@ -162,7 +246,7 @@ class ResultUpdater:
           2. /round/{n}/playout    → IDs simulation ≠ IDs matches   → matching par index
         """
         # ── Stratégie 1 : /results (IDs corrects) ───────────────────────────
-        league_matches = self._results_from_league_api(league_id, round_number)
+        league_matches = self._results_from_league_api(league_id, round_number, event_category_id)
         if league_matches:
             logger.info(
                 "Ligue %d R%d — source: /{league_id}/results (%d matchs, IDs corrects)",
@@ -219,8 +303,12 @@ class ResultUpdater:
             if not result_data:
                 return f"{league_name} R{round_number} — aucun résultat disponible (trop tôt ?)"
 
+            matches_list = result_data.get("matches", [])
+            if not matches_list:
+                return f"{league_name} R{round_number} — aucun match enrichi (matching impossible)"
+
             # Refus du fallback positionnel : IDs playout ≠ IDs matches → scores potentiellement mal attribués
-            source = result_data.get("matches", [{}])[0].get("_source", "")
+            source = matches_list[0].get("_source", "")
             if source == "playout_index":
                 logger.info(
                     "Ligue %d R%d — source playout_index ignorée (matching positionnel non fiable)",

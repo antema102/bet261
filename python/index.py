@@ -28,7 +28,8 @@ class VirtualSportsScraper:
             'Spanish_League': 8037,
             'French_League': 8042,
             'German_League': 8043,
-            'Portuguese_League': 8044
+            'Portuguese_League': 8044,
+            'World_Cup': 8065
         }
         
         self.backend_url = "http://127.0.0.1:4000/api"  

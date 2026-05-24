@@ -1,224 +1,66 @@
-const API_BASE = '/api';
+import axios from 'axios';
+import type {
+  DailyResponse,
+  HistoryRound,
+  SimilarResponse,
+  LeagueOption,
+} from './types';
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = await res.json();
-  if (!body.success) throw new Error(body.error ?? 'Erreur inconnue');
-  return body.data as T;
+const api = axios.create({
+  baseURL: '/api',
+});
+
+// ── /api/analysis/daily ───────────────────────────────────────────────────────
+export async function fetchDaily(
+  tolerance: number,
+  leagueId?: number | null,
+): Promise<DailyResponse> {
+  const params: Record<string, unknown> = { tolerance };
+  if (leagueId) params.league_id = leagueId;
+  const res = await api.get<{ data: DailyResponse }>('/analysis/daily', { params });
+  return res.data.data;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface OddsTriple {
-  home: number;
-  draw: number;
-  away: number;
+// ── /api/predictions ──────────────────────────────────────────────────────────
+export async function fetchHistory(
+  tolerance: number,
+  leagueId?: number | null,
+  limit = 50,
+): Promise<HistoryRound[]> {
+  const params: Record<string, unknown> = { tolerance, limit, status: 'finished' };
+  if (leagueId) params.league_id = leagueId;
+  const res = await api.get<{ data: HistoryRound[] }>('/predictions', { params });
+  return res.data.data ?? [];
 }
 
-export interface SimilarMatchBrief {
-  matchId?: number;
-  round_number: number;
-  league_name: string;
-  matchName: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: OddsTriple;
-  distance: number;
-  result: { homeScore: number; awayScore: number };
+// ── /api/analysis/similar ─────────────────────────────────────────────────────
+export async function fetchSimilar(
+  home: number,
+  draw: number,
+  away: number,
+  tolerance: number,
+  leagueId?: number | null,
+  limit = 30,
+): Promise<SimilarResponse> {
+  const params: Record<string, unknown> = { home, draw, away, tolerance, limit };
+  if (leagueId) params.league_id = leagueId;
+  const res = await api.get<{ data: SimilarResponse }>('/analysis/similar', { params });
+  return res.data.data;
 }
 
-export interface MatchPrediction {
-  matchId?: number;
-  name: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: OddsTriple;
-  prediction: {
-    sampleSize: number;
-    homeWinPct: number | null;
-    drawPct: number | null;
-    awayWinPct: number | null;
-  };
-  similarMatches?: SimilarMatchBrief[];
+// ── /api/analysis/daily (future_only=true) ───────────────────────────────────
+export async function fetchUpcoming(
+  tolerance: number,
+  leagueId?: number | null,
+): Promise<DailyResponse> {
+  const params: Record<string, unknown> = { tolerance, future_only: 'true' };
+  if (leagueId) params.league_id = leagueId;
+  const res = await api.get<{ data: DailyResponse }>('/analysis/daily', { params });
+  return res.data.data;
 }
 
-export interface DailyRound {
-  league_name: string;
-  league_id: number;
-  event_category_id: number;
-  round_number: number;
-  expected_start: string;
-  matches: MatchPrediction[];
+// ── /api/leagues/options ──────────────────────────────────────────────────────
+export async function fetchLeagues(): Promise<LeagueOption[]> {
+  const res = await api.get<{ data: LeagueOption[] }>('/leagues/options');
+  return res.data.data ?? [];
 }
-
-export interface DailyResponse {
-  tolerance: number;
-  totalUpcoming: number;
-  rounds: DailyRound[];
-}
-
-export interface LeagueOption {
-  league_id: number;
-  league_name: string;
-}
-
-export interface SimilarMatch {
-  league_name: string;
-  league_id: number;
-  event_category_id: number;
-  round_number: number;
-  expected_start: string;
-  matchName: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: OddsTriple;
-  distance: number;
-  result: { homeScore: number; awayScore: number } | null;
-}
-
-export interface SimilarResponse {
-  target: OddsTriple;
-  tolerance: number;
-  league_id?: number | null;
-  total: number;
-  stats: {
-    homeWinPct: number;
-    drawPct: number;
-    awayWinPct: number;
-    homeWins: number;
-    draws: number;
-    awayWins: number;
-  };
-  matches: SimilarMatch[];
-}
-
-export interface MatchDocument {
-  _id: string;
-  league_name: string;
-  league_id: number;
-  round_number: number;
-  event_category_id: number;
-  expected_start: string;
-  odds_data: any;
-  result_data: any;
-  status: 'upcoming' | 'finished';
-  timestamp: string;
-}
-
-export interface StatsData {
-  total_matches: number;
-  total_rounds: number;
-  total_results: number;
-  total_rankings: number;
-  last_update: { timestamp: string } | null;
-}
-
-export interface PredictionMatch {
-  matchId?: number;
-  matchName: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: OddsTriple;
-  prediction: {
-    sampleSize: number;
-    homeWinPct: number | null;
-    drawPct: number | null;
-    awayWinPct: number | null;
-  };
-  result: { homeScore: number; awayScore: number } | null;
-}
-
-export interface PredictionRound {
-  league_name: string;
-  league_id: number;
-  round_number: number;
-  event_category_id: number;
-  expected_start: string;
-  tolerance: number;
-  status: 'upcoming' | 'finished';
-  matches: PredictionMatch[];
-}
-
-// ─── API Calls ────────────────────────────────────────────────────────────────
-
-export const api = {
-  /** Matchs à venir avec prédictions basées sur l'historique */
-  getDaily: (tolerance?: number, leagueId?: number) => {
-    const params = new URLSearchParams();
-    if (tolerance !== undefined) params.set('tolerance', String(tolerance));
-    if (leagueId) params.set('league_id', String(leagueId));
-    const qs = params.toString();
-    return request<DailyResponse>(`/analysis/daily${qs ? `?${qs}` : ''}`);
-  },
-
-  /** Matchs historiques avec cotes similaires */
-  getSimilar: (
-    home: number, draw: number, away: number,
-    tolerance?: number, limit?: number, leagueId?: number,
-    excludeLeagueId?: number, excludeEventCategoryId?: number, excludeRoundNumber?: number
-  ) => {
-    const params = new URLSearchParams({
-      home: String(home),
-      draw: String(draw),
-      away: String(away),
-    });
-    if (tolerance !== undefined) params.set('tolerance', String(tolerance));
-    if (limit) params.set('limit', String(limit));
-    if (leagueId) params.set('league_id', String(leagueId));
-    if (excludeLeagueId !== undefined) params.set('exclude_league_id', String(excludeLeagueId));
-    if (excludeEventCategoryId !== undefined) params.set('exclude_event_category_id', String(excludeEventCategoryId));
-    if (excludeRoundNumber !== undefined) params.set('exclude_round_number', String(excludeRoundNumber));
-    return request<SimilarResponse>(`/analysis/similar?${params}`);
-  },
-
-  /** Tous les matchs (ou filtrés par ligue) */
-  getMatches: (options?: { leagueId?: number; status?: 'upcoming' | 'finished'; limit?: number }) => {
-    const params = new URLSearchParams();
-    if (options?.leagueId) params.set('league_id', String(options.leagueId));
-    if (options?.status) params.set('status', options.status);
-    if (options?.limit) params.set('limit', String(options.limit));
-    const qs = params.toString();
-    return request<MatchDocument[]>(`/matches${qs ? `?${qs}` : ''}`);
-  },
-
-  /** Ligues disponibles */
-  getLeagues: () => request<LeagueOption[]>('/leagues/options'),
-
-  /** Statistiques globales */
-  getStats: () => request<StatsData>('/leagues/stats'),
-
-  /** Sauvegarder la prédiction d'un round */
-  savePrediction: (data: {
-    league_name: string;
-    league_id: number;
-    round_number: number;
-    event_category_id: number;
-    expected_start: string;
-    tolerance: number;
-    matches: Array<{
-      matchId?: number;
-      matchName: string;
-      homeTeam: string;
-      awayTeam: string;
-      odds: OddsTriple;
-      prediction: MatchPrediction['prediction'];
-    }>;
-  }) =>
-    request<{ saved: boolean }>('/predictions/upsert', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  /** Récupérer les prédictions sauvegardées (rounds terminés) */
-  getPredictions: (tolerance: number, leagueId?: number, limit?: number, status?: 'finished' | 'upcoming' | 'all') => {
-    const params = new URLSearchParams({ tolerance: String(tolerance) });
-    if (leagueId) params.set('league_id', String(leagueId));
-    if (limit) params.set('limit', String(limit));
-    if (status) params.set('status', status);
-    return request<PredictionRound[]>(`/predictions?${params}`);
-  },
-};

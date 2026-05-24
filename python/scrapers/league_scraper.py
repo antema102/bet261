@@ -48,16 +48,16 @@ class LeagueScraper:
         # Construit un index des matchs de /round par noms d'équipes normalisés
         def _team_key(m: dict) -> str:
             """Clé de matching basée sur les noms d'équipes (insensible à la casse)."""
-            home = (m.get("homeTeam") or {}).get("name", "") if isinstance(m.get("homeTeam"), dict) else ""
-            away = (m.get("awayTeam") or {}).get("name", "") if isinstance(m.get("awayTeam"), dict) else ""
+            home = str((m.get("homeTeam") or {}).get("name") or "") if isinstance(m.get("homeTeam"), dict) else ""
+            away = str((m.get("awayTeam") or {}).get("name") or "") if isinstance(m.get("awayTeam"), dict) else ""
             return f"{home.strip().lower()}|{away.strip().lower()}"
 
         def _api_team_key(m: dict) -> str:
             """Clé de matching pour un match de /matches (structure peut différer)."""
             home_obj = m.get("homeTeam", {})
             away_obj = m.get("awayTeam", {})
-            home = home_obj.get("name", "") if isinstance(home_obj, dict) else str(home_obj)
-            away = away_obj.get("name", "") if isinstance(away_obj, dict) else str(away_obj)
+            home = str(home_obj.get("name") or "") if isinstance(home_obj, dict) else str(home_obj or "")
+            away = str(away_obj.get("name") or "") if isinstance(away_obj, dict) else str(away_obj or "")
             return f"{home.strip().lower()}|{away.strip().lower()}"
 
         odds_by_teams = {_team_key(om): om for om in odds_matches}

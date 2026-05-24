@@ -1,207 +1,256 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { api, type SimilarResponse, type LeagueOption } from '../api';
-import { OddsBadge, ProbBar, Spinner, ErrorMsg, formatDate, formatTime } from '../components/ui';
+import { useState } from 'react';
+import { fetchSimilar, fetchLeagues } from '../api';
+import type { SimilarResponse, SimilarResult, LeagueOption } from '../types';
+import { useEffect } from 'react';
 
-export default function SimilarPage() {
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
-  const home = parseFloat(params.get('home') ?? '');
-  const draw = parseFloat(params.get('draw') ?? '');
-  const away = parseFloat(params.get('away') ?? '');
-  const tolerance = parseFloat(params.get('tolerance') ?? '0');
-  const queryLeagueId = parseFloat(params.get('league_id') ?? '');
-  const excludeLeagueId = params.get('exclude_league_id') ? parseInt(params.get('exclude_league_id')!) : undefined;
-  const excludeEventCategoryId = params.get('exclude_event_category_id') ? parseInt(params.get('exclude_event_category_id')!) : undefined;
-  const excludeRoundNumber = params.get('exclude_round_number') ? parseInt(params.get('exclude_round_number')!) : undefined;
+// ── Utilitaires ───────────────────────────────────────────────────────────────
 
-  const [data, setData] = useState<SimilarResponse | null>(null);
-  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [leagueId, setLeagueId] = useState<number | ''>(isNaN(queryLeagueId) ? '' : queryLeagueId);
-  const [currentTolerance, setCurrentTolerance] = useState(isNaN(tolerance) ? 0 : tolerance);
+function OutcomeBadge({ home, away }: { home: number; away: number }) {
+  if (home > away) return <span className="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded">1</span>;
+  if (home < away) return <span className="bg-red-700 text-white text-xs font-bold px-2 py-0.5 rounded">2</span>;
+  return <span className="bg-yellow-600 text-white text-xs font-bold px-2 py-0.5 rounded">X</span>;
+}
 
-  useEffect(() => {
-    if (isNaN(home) || isNaN(draw) || isNaN(away)) {
-      setError('Paramètres invalides (home, draw, away requis)');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    Promise.all([
-      api.getSimilar(home, draw, away, currentTolerance, 50, leagueId || undefined, excludeLeagueId, excludeEventCategoryId, excludeRoundNumber),
-      api.getLeagues(),
-    ])
-      .then(([similarData, leaguesData]) => {
-        setData(similarData);
-        setLeagues(leaguesData);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [home, draw, away, currentTolerance, leagueId]);
-
-  const updateLeague = (value: number | '') => {
-    setLeagueId(value);
-    const next = new URLSearchParams(params);
-    if (value) next.set('league_id', String(value));
-    else next.delete('league_id');
-    navigate(`/similar?${next.toString()}`, { replace: true });
-  };
-
-  const updateTolerance = (value: number) => {
-    setCurrentTolerance(value);
-    const next = new URLSearchParams(params);
-    next.set('tolerance', String(value));
-    navigate(`/similar?${next.toString()}`, { replace: true });
-  };
+function PctDonut({ homeWin, draw, awayWin }: { homeWin: number; draw: number; awayWin: number }) {
+  const items = [
+    { label: '1', pct: homeWin, color: 'bg-green-500' },
+    { label: 'X', pct: draw,    color: 'bg-yellow-500' },
+    { label: '2', pct: awayWin, color: 'bg-red-500' },
+  ];
+  const best = items.reduce((a, b) => (a.pct >= b.pct ? a : b));
 
   return (
-    <div>
-      <Link to="/" className="text-emerald-400 text-sm hover:underline mb-4 inline-block">
-        ← Retour aux prédictions
-      </Link>
-
-      <h2 className="text-2xl font-bold text-white mb-2">
-        🔍 Matchs similaires
-      </h2>
-
-      {!isNaN(home) && (
-        <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
-          <OddsBadge odds={{ home, draw, away }} />
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-xs text-gray-400">Tolérance :</label>
-            <select
-              value={currentTolerance}
-              onChange={(e) => updateTolerance(Number(e.target.value))}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-            >
-              <option value={0}>Exact (0.00)</option>
-              <option value={0.15}>Strict (0.15)</option>
-              <option value={0.3}>Normal (0.30)</option>
-              <option value={0.5}>Large (0.50)</option>
-              <option value={0.8}>Très large (0.80)</option>
-            </select>
-            <select
-              value={leagueId}
-              onChange={(e) => updateLeague(e.target.value ? Number(e.target.value) : '')}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-            >
-              <option value="">Toutes les ligues</option>
-              {leagues.map((league) => (
-                <option key={league.league_id} value={league.league_id}>
-                  {league.league_name}
-                </option>
-              ))}
-            </select>
+    <div className="flex flex-col items-center gap-2">
+      {/* Tendance principale */}
+      <div className="text-center">
+        <span className={`text-4xl font-black ${
+          best.label === '1' ? 'text-green-400' :
+          best.label === '2' ? 'text-red-400' : 'text-yellow-400'
+        }`}>{best.label}</span>
+        <p className="text-xs text-gray-400">{best.pct}%</p>
+      </div>
+      {/* Barres */}
+      <div className="w-full space-y-1.5">
+        {items.map(it => (
+          <div key={it.label} className="flex items-center gap-2">
+            <span className="text-xs text-gray-400 w-4">{it.label}</span>
+            <div className="flex-1 bg-gray-800 rounded-full h-2">
+              <div className={`h-2 rounded-full ${it.color}`} style={{ width: `${it.pct}%` }} />
+            </div>
+            <span className="text-xs font-bold w-9 text-right">{it.pct}%</span>
           </div>
-        </div>
-      )}
-
-      {loading && <Spinner />}
-      {error && <ErrorMsg message={error} />}
-
-      {data && (
-        <>
-          {/* Statistiques globales */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <StatBox
-              label="Victoire domicile"
-              value={`${data.stats.homeWinPct}%`}
-              count={data.stats.homeWins}
-              color="emerald"
-            />
-            <StatBox
-              label="Match nul"
-              value={`${data.stats.drawPct}%`}
-              count={data.stats.draws}
-              color="yellow"
-            />
-            <StatBox
-              label="Victoire extérieur"
-              value={`${data.stats.awayWinPct}%`}
-              count={data.stats.awayWins}
-              color="red"
-            />
-          </div>
-
-          <ProbBar
-            homeWinPct={data.stats.homeWinPct}
-            drawPct={data.stats.drawPct}
-            awayWinPct={data.stats.awayWinPct}
-          />
-
-          <p className="text-sm text-gray-500 mt-3 mb-4">
-            {data.total} match(s) trouvé(s) dans l'historique
-          </p>
-
-          {/* Liste des matchs */}
-          <div className="space-y-2">
-            {data.matches.map((m, i) => (
-              <div
-                key={i}
-                className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between"
-              >
-                <div>
-                  <span className="text-white font-medium">{m.matchName}</span>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {m.league_name} · R{m.round_number}
-                    · <span className="text-gray-600">saison {m.event_category_id}</span>
-                    · {formatDate(m.expected_start)} {formatTime(m.expected_start)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <OddsBadge odds={m.odds} />
-                  {m.result ? (
-                    <span className={`font-bold text-lg min-w-[60px] text-center ${
-                      m.result.homeScore > m.result.awayScore
-                        ? 'text-emerald-400'
-                        : m.result.homeScore < m.result.awayScore
-                          ? 'text-red-400'
-                          : 'text-yellow-400'
-                    }`}>
-                      {m.result.homeScore} - {m.result.awayScore}
-                    </span>
-                  ) : (
-                    <span className="text-gray-600 text-sm">N/A</span>
-                  )}
-                  <span className="text-xs text-gray-600">
-                    d={m.distance}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
 
-function StatBox({ label, value, count, color }: {
-  label: string;
-  value: string;
-  count: number;
-  color: 'emerald' | 'yellow' | 'red';
-}) {
-  const bg = {
-    emerald: 'bg-emerald-900/30 border-emerald-800',
-    yellow: 'bg-yellow-900/30 border-yellow-800',
-    red: 'bg-red-900/30 border-red-800',
-  }[color];
-  const txt = {
-    emerald: 'text-emerald-400',
-    yellow: 'text-yellow-400',
-    red: 'text-red-400',
-  }[color];
+// ── Carte résultat similaire ──────────────────────────────────────────────────
+
+function SimilarCard({ m }: { m: SimilarResult }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-gray-400">{m.league_name} — R{m.round_number}</p>
+          <p className="text-sm font-semibold text-white">{m.matchName}</p>
+          <p className="text-xs text-gray-400">{m.homeTeam} vs {m.awayTeam}</p>
+        </div>
+        <div className="text-right">
+          {m.result ? (
+            <>
+              <p className="text-lg font-black text-white">{m.result.homeScore} – {m.result.awayScore}</p>
+              <OutcomeBadge home={m.result.homeScore} away={m.result.awayScore} />
+            </>
+          ) : (
+            <span className="text-gray-500 text-sm">—</span>
+          )}
+        </div>
+      </div>
+      {/* Cotes */}
+      <div className="flex gap-2 text-xs flex-wrap">
+        {[['1', m.odds.home], ['X', m.odds.draw], ['2', m.odds.away]].map(([l, v]) => (
+          <span key={l as string} className="bg-gray-800 rounded px-2 py-0.5">
+            <span className="text-gray-400">{l} </span>
+            <span className="text-white font-semibold">{v}</span>
+          </span>
+        ))}
+        <span className="text-gray-500 ml-auto">dist: {m.distance}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Page principale ───────────────────────────────────────────────────────────
+
+export default function SimilarPage() {
+  const [home, setHome] = useState('');
+  const [draw, setDraw] = useState('');
+  const [away, setAway] = useState('');
+  const [tolerance, setTolerance] = useState(0.20);
+  const [leagueId, setLeagueId] = useState<number | null>(null);
+  const [limit, setLimit] = useState(30);
+
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
+  const [result, setResult] = useState<SimilarResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchLeagues().then(setLeagues).catch(() => {});
+  }, []);
+
+  async function search(e: React.FormEvent) {
+    e.preventDefault();
+    const h = parseFloat(home);
+    const d = parseFloat(draw);
+    const a = parseFloat(away);
+    if (isNaN(h) || isNaN(d) || isNaN(a)) {
+      setError('Veuillez saisir des cotes valides (ex: 1.50)');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchSimilar(h, d, a, tolerance, leagueId, limit);
+      setResult(res);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erreur inconnue');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className={`rounded-lg border p-4 text-center ${bg}`}>
-      <div className={`text-2xl font-bold ${txt}`}>{value}</div>
-      <div className="text-xs text-gray-400 mt-1">{label}</div>
-      <div className="text-xs text-gray-600">({count})</div>
+    <div>
+      {/* ── Formulaire ── */}
+      <form
+        onSubmit={search}
+        className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6"
+      >
+        <h2 className="text-white font-semibold mb-4">🔍 Recherche par cotes 1X2</h2>
+        <div className="flex flex-wrap gap-4 items-end">
+          {/* Cotes */}
+          {[
+            { label: 'Cote 1 (domicile)', val: home, set: setHome },
+            { label: 'Cote X (nul)',       val: draw, set: setDraw },
+            { label: 'Cote 2 (extérieur)', val: away, set: setAway },
+          ].map(({ label, val, set }) => (
+            <div key={label} className="flex-1 min-w-28">
+              <label className="block text-xs text-gray-400 mb-1">{label}</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                value={val}
+                onChange={e => set(e.target.value)}
+                placeholder="ex: 1.50"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          ))}
+
+          {/* Tolérance */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Tolérance</label>
+            <select
+              value={tolerance}
+              onChange={e => setTolerance(parseFloat(e.target.value))}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white"
+            >
+              {[0.00, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50].map(v => (
+                <option key={v} value={v}>{v.toFixed(2)}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ligue */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Ligue</label>
+            <select
+              value={leagueId ?? ''}
+              onChange={e => setLeagueId(e.target.value ? parseInt(e.target.value) : null)}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white"
+            >
+              <option value="">Toutes</option>
+              {leagues.map(l => (
+                <option key={l.league_id} value={l.league_id}>{l.league_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Limit */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Limite</label>
+            <select
+              value={limit}
+              onChange={e => setLimit(parseInt(e.target.value))}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white"
+            >
+              {[10, 20, 30, 50, 100].map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium px-6 py-1.5 rounded-lg text-sm transition-colors"
+          >
+            {loading ? 'Recherche…' : '🔍 Rechercher'}
+          </button>
+        </div>
+      </form>
+
+      {/* ── Erreur ── */}
+      {error && (
+        <div className="bg-red-900/40 border border-red-700 rounded-xl p-4 mb-6 text-red-300 text-sm">
+          ❌ {error}
+        </div>
+      )}
+
+      {/* ── Résultats ── */}
+      {result && (
+        <>
+          {/* Statistiques globales */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex flex-wrap gap-6 items-center">
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Cotes cibles</p>
+              <div className="flex gap-2 text-sm">
+                {[['1', result.target.home], ['X', result.target.draw], ['2', result.target.away]].map(([l, v]) => (
+                  <span key={l as string} className="bg-gray-800 rounded px-2 py-0.5">
+                    <span className="text-gray-400">{l} </span>
+                    <span className="text-white font-bold">{v}</span>
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{result.total} résultat(s) — tolérance: {result.tolerance}</p>
+            </div>
+
+            {result.total > 0 && (
+              <div className="flex-1 min-w-64">
+                <PctDonut
+                  homeWin={result.stats.homeWinPct}
+                  draw={result.stats.drawPct}
+                  awayWin={result.stats.awayWinPct}
+                />
+              </div>
+            )}
+
+            {result.total === 0 && (
+              <p className="text-gray-500 text-sm">Aucun match similaire trouvé. Essayez une tolérance plus large.</p>
+            )}
+          </div>
+
+          {/* Liste */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {result.matches.map((m, i) => (
+              <SimilarCard key={i} m={m} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

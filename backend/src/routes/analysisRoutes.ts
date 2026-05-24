@@ -77,36 +77,61 @@ function oddsDistance(a: OddsTriple, b: OddsTriple): number {
 }
 
 /**
- * Extrait le score final depuis result_data (playout)
- * pour un match identifié par son matchId.
- * Si le matchId n'est pas trouvé, tente par index.
+ * Clé de matching par noms d'équipes (insensible à la casse)
+ */
+function teamKey(homeTeam: any, awayTeam: any): string {
+  const h = (typeof homeTeam === 'object' ? homeTeam?.name : homeTeam) ?? '';
+  const a = (typeof awayTeam === 'object' ? awayTeam?.name : awayTeam) ?? '';
+  return `${String(h).trim().toLowerCase()}|${String(a).trim().toLowerCase()}`;
+}
+
+/**
+ * Extrait le score final depuis result_data.
+ * Stratégie de matching (dans l'ordre) :
+ *   1. Par matchId direct
+ *   2. Par noms d'équipes (homeTeam|awayTeam)
+ *   3. Par index positionnel (dernier recours)
  */
 function extractScore(
   resultData: any,
   matchId: number,
   oddsId: number | undefined,
   index: number,
-): { homeScore: number; awayScore: number } | null {
+  homeTeam?: string,
+  awayTeam?: string,
+): { homeScore: number; awayScore: number; matchMethod: string } | null {
   if (!resultData?.matches) return null;
-  // Tente par matchId d'abord
-  let rm = resultData.matches.find((m: any) => m.id === matchId);
-  if (!rm && oddsId != null) {
-    rm = resultData.matches.find((m: any) => m.id === oddsId);
+  const rms: any[] = resultData.matches;
+
+  // 1. Par matchId
+  let rm = rms.find((m: any) => m.id === matchId);
+  let method = 'id';
+
+  // 2. Par noms d'équipes
+  if (!rm && homeTeam && awayTeam) {
+    const key = teamKey(homeTeam, awayTeam);
+    rm = rms.find((m: any) => teamKey(m.homeTeam, m.awayTeam) === key);
+    if (rm) method = 'name';
   }
-  // Sinon, par index (ordre dans le round)
-  if (!rm && index < resultData.matches.length) {
-    rm = resultData.matches[index];
+
+  // 3. Par index positionnel
+  if (!rm && index < rms.length) {
+    rm = rms[index];
+    method = 'index';
   }
+
   if (!rm) return null;
+
   if (typeof rm.homeScore === 'number' && typeof rm.awayScore === 'number') {
-    return { homeScore: rm.homeScore, awayScore: rm.awayScore };
+    return { homeScore: rm.homeScore, awayScore: rm.awayScore, matchMethod: method };
   }
   const goals = rm.goals ?? [];
-  if (goals.length === 0) return { homeScore: 0, awayScore: 0 };
+  if (goals.length === 0) return { homeScore: 0, awayScore: 0, matchMethod: method };
   const last = goals[goals.length - 1];
   return {
     homeScore: Math.round(last.homeScore ?? 0),
     awayScore: Math.round(last.awayScore ?? 0),
+    matchMethod: method,
   };
 }
 
@@ -160,7 +185,7 @@ router.get('/similar', async (req: Request, res: Response) => {
           excludeEventCategoryId !== null && round.event_category_id === excludeEventCategoryId &&
           excludeRoundNumber !== null && round.round_number === excludeRoundNumber;
         if (dist <= tolerance && !isExcluded) {
-          const score = extractScore(round.result_data, sm.matchId, sm.oddsId, i);
+          const score = extractScore(round.result_data, sm.matchId, sm.oddsId, i, sm.homeTeam, sm.awayTeam);
           similar.push({
             league_name: round.league_name,
             league_id: round.league_id,
@@ -214,21 +239,27 @@ router.get('/similar', async (req: Request, res: Response) => {
 // probabilités estimées basées sur l'historique des cotes similaires.
 //
 // Query params :
-//   tolerance   — distance max (défaut 0.30)
-//   league_id   — optionnel, filtre par ligue
+//   tolerance    — distance max (défaut 0.30)
+//   league_id    — optionnel, filtre par ligue
+//   future_only  — si "true", ne retourne que les rounds dont expected_start > now
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/daily', async (req: Request, res: Response) => {
   try {
     const tolerance = req.query.tolerance !== undefined ? parseFloat(req.query.tolerance as string) : 0;
+    const futureOnly = req.query.future_only === 'true';
     const leagueFilter = req.query.league_id
       ? { league_id: parseInt(req.query.league_id as string) }
       : {};
+
+    // Filtre temporel : uniquement les rounds dont le début est dans le futur
+    const timeFilter = futureOnly ? { expected_start: { $gt: new Date() } } : {};
 
     // 1. Matchs à venir
     const upcomingRounds = await Match.find({
       status: 'upcoming',
       odds_data: { $ne: null },
       ...leagueFilter,
+      ...timeFilter,
     })
       .select('league_name league_id event_category_id round_number expected_start odds_data')
       .sort({ expected_start: 1 })
@@ -263,7 +294,7 @@ router.get('/daily', async (req: Request, res: Response) => {
     for (const round of finishedRounds) {
       const subMatches = extractRoundMatches(round.odds_data);
       for (let i = 0; i < subMatches.length; i++) {
-        const score = extractScore(round.result_data, subMatches[i].matchId, subMatches[i].oddsId, i);
+        const score = extractScore(round.result_data, subMatches[i].matchId, subMatches[i].oddsId, i, subMatches[i].homeTeam, subMatches[i].awayTeam);
         if (score) {
           historicalMatches.push({
             league_name: round.league_name,

@@ -12,22 +12,6 @@ export interface IMatch extends Document {
   timestamp: Date;
 }
 
-export interface IRound extends Document {
-  league_name: string;
-  league_id: number;
-  round_number: number;
-  event_category_id: number;
-  data: Record<string, unknown>;
-  timestamp: Date;
-}
-
-export interface IResult extends Document {
-  league_name: string;
-  league_id: number;
-  data: Record<string, unknown>;
-  timestamp: Date;
-}
-
 export interface IRanking extends Document {
   league_name: string;
   league_id: number;

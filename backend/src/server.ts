@@ -4,8 +4,6 @@ import dotenv from 'dotenv';
 
 import { connectDB } from './utils/db';
 import matchRoutes from './routes/matchRoutes';
-import roundRoutes from './routes/roundRoutes';
-import resultRoutes from './routes/resultRoutes';
 import rankingRoutes from './routes/rankingRoutes';
 import leagueRoutes from './routes/leagueRoutes';
 import analysisRoutes from './routes/analysisRoutes';
@@ -26,8 +24,6 @@ connectDB();
 
 // Routes
 app.use('/api/matches', matchRoutes);
-app.use('/api/rounds', roundRoutes);
-app.use('/api/results', resultRoutes);
 app.use('/api/rankings', rankingRoutes);
 app.use('/api/leagues', leagueRoutes);
 app.use('/api/analysis', analysisRoutes);
