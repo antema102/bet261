@@ -44,7 +44,7 @@ class Scheduler:
 
     def _run_scraper_cycle(self) -> None:
         """Scrape toutes les ligues en parallèle (cotes + classement)."""
-        logger.info("📡 Scraping des cotes (%d ligues, workers: %d)",
+        logger.debug("📡 Scraping des cotes (%d ligues, workers: %d)",
                     len(self.categories), MAX_WORKERS)
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -53,13 +53,13 @@ class Scheduler:
                 for name, lid in self.categories.items()
             }
             for future in as_completed(futures):
-                logger.info("  → %s", future.result())
+                logger.debug("  → %s", future.result())
 
     # ── Boucle résultats (thread séparé) ──────────────────────────────────────
 
     def _result_loop(self, interval: int) -> None:
         """Tourne en arrière-plan et vérifie les résultats toutes les `interval` secondes."""
-        logger.info("🔁 Thread résultats démarré (intervalle : %ds)", interval)
+        logger.debug("🔁 Thread résultats démarré (intervalle : %ds)", interval)
         while not self._stop_event.is_set():
             start = time.time()
             try:
@@ -75,7 +75,7 @@ class Scheduler:
 
     def run_once(self) -> None:
         """Exécute un seul cycle de scraping puis une vérification des résultats."""
-        logger.info("Exécution unique du scraping (parallèle)")
+        logger.debug("Exécution unique du scraping (parallèle)")
         self._run_scraper_cycle()
         self.result_updater.run()
 
@@ -89,7 +89,7 @@ class Scheduler:
         - Scraping des cotes  : toutes les `scraper_interval` secondes (défaut 120s)
         - Vérif. des résultats : toutes les `result_interval` secondes (défaut 60s)
         """
-        logger.info(
+        logger.debug(
             "🚀 Démarrage — scraping: %ds | résultats: %ds",
             scraper_interval, result_interval,
         )
@@ -110,15 +110,15 @@ class Scheduler:
                 start_time = time.time()
                 self._run_scraper_cycle()
                 elapsed = time.time() - start_time
-                logger.info("Cycle scraping terminé en %.2fs", elapsed)
+                logger.debug("Cycle scraping terminé en %.2fs", elapsed)
 
                 sleep_time = max(0.0, scraper_interval - elapsed)
                 if sleep_time:
-                    logger.info("Attente de %.2fs avant le prochain cycle scraping", sleep_time)
-                    time.sleep(sleep_time)
+                    logger.debug("Attente de %.2fs avant le prochain cycle scraping", sleep_time)
+                    self._stop_event.wait(sleep_time)
 
             except KeyboardInterrupt:
-                logger.info("Arrêt demandé — arrêt du scraper...")
+                logger.warning("Arrêt demandé — arrêt du scraper...")
                 self._stop_event.set()
                 result_thread.join(timeout=5)
                 break

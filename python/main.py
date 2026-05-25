@@ -10,7 +10,7 @@ from scheduler import Scheduler
 from config import BASE_URL, BACKEND_URL, CATEGORIES, DEFAULT_INTERVAL, RESULT_CHECK_INTERVAL
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 

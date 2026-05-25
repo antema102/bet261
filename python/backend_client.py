@@ -28,7 +28,7 @@ class BackendClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            logger.info("Données envoyées avec succès à %s", endpoint)
+            logger.debug("Données envoyées avec succès à %s", endpoint)
             return True
         except requests.exceptions.RequestException as exc:
             logger.error("Erreur POST %s : %s", endpoint, exc)
@@ -45,7 +45,7 @@ class BackendClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            logger.info("Mise à jour réussie : %s", endpoint)
+            logger.debug("Mise à jour réussie : %s", endpoint)
             return True
         except requests.exceptions.RequestException as exc:
             logger.error("Erreur PUT %s : %s", endpoint, exc)

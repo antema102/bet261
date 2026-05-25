@@ -248,14 +248,14 @@ class ResultUpdater:
         # ── Stratégie 1 : /results (IDs corrects) ───────────────────────────
         league_matches = self._results_from_league_api(league_id, round_number, event_category_id)
         if league_matches:
-            logger.info(
+            logger.debug(
                 "Ligue %d R%d — source: /{league_id}/results (%d matchs, IDs corrects)",
                 league_id, round_number, len(league_matches),
             )
             return self._enrich(league_matches, odds_data, "league_results")
 
         # ── Stratégie 2 : fallback /playout (matching positionnel) ──────────
-        logger.info(
+        logger.debug(
             "Ligue %d R%d — round absent de /results, repli sur /playout (index)",
             league_id, round_number,
         )
@@ -310,7 +310,7 @@ class ResultUpdater:
             # Refus du fallback positionnel : IDs playout ≠ IDs matches → scores potentiellement mal attribués
             source = matches_list[0].get("_source", "")
             if source == "playout_index":
-                logger.info(
+                logger.debug(
                     "Ligue %d R%d — source playout_index ignorée (matching positionnel non fiable)",
                     league_id, round_number,
                 )
@@ -338,10 +338,10 @@ class ResultUpdater:
         pending = self.backend.get_pending_matches()
 
         if not pending:
-            logger.info("🔄 Aucun match pending à mettre à jour")
+            logger.debug("🔄 Aucun match pending à mettre à jour")
             return
 
-        logger.info("🔄 Mise à jour de %d match(s) pending via playout...", len(pending))
+        logger.debug("🔄 Mise à jour de %d match(s) pending via playout...", len(pending))
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {
@@ -349,4 +349,4 @@ class ResultUpdater:
                 for match in pending
             }
             for future in as_completed(futures):
-                logger.info("  → %s", future.result())
+                logger.debug("  → %s", future.result())

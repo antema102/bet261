@@ -102,7 +102,7 @@ class LeagueScraper:
 
     def process(self, league_name: str, league_id: int) -> None:
         """Traite toutes les données d'une ligue (matchs avec cotes + classement)."""
-        logger.info("=== Traitement de %s (ID: %d) ===", league_name, league_id)
+        logger.debug("=== Traitement de %s (ID: %d) ===", league_name, league_id)
 
         # 1. Récupérer la liste des rounds à venir (avec les VRAIS IDs des matchs)
         matches_data = self.api.get_matches(league_id)
@@ -114,7 +114,7 @@ class LeagueScraper:
         stored_count = 0
         skipped_count = 0
 
-        logger.info("%s — %d round(s) trouvé(s) dans l'API", league_name, len(rounds))
+        logger.debug("%s — %d round(s) trouvé(s) dans l'API", league_name, len(rounds))
 
         for round_info in rounds:
             round_number      = round_info.get("roundNumber")
@@ -160,7 +160,7 @@ class LeagueScraper:
             # Petit délai pour ne pas saturer l'API externe
             time.sleep(REQUEST_DELAY)
 
-        logger.info(
+        logger.debug(
             "%s — résumé : %d stocké(s), %d ignoré(s) sur %d round(s)",
             league_name, stored_count, skipped_count, len(rounds),
         )
