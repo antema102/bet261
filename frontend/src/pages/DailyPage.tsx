@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { fetchDaily, fetchLeagues } from '../api';
-import type { DailyRound, DailySubMatch, LeagueOption } from '../types';
+import type { DailyRound, DailySubMatch, LeagueOption, OverUnderLine } from '../types';
 
 // ── Composants utilitaires ────────────────────────────────────────────────────
 
@@ -34,6 +34,23 @@ function OutcomeBadge({ home, away }: { home: number; away: number }) {
   return <span className="bg-yellow-600 text-white text-xs font-bold px-2 py-0.5 rounded">X</span>;
 }
 
+function OverUnderBadges({ lines, compact = false }: { lines?: OverUnderLine[]; compact?: boolean }) {
+  const displayed = (lines ?? []).filter(l => l.total === '2.5');
+  if (displayed.length === 0) return null;
+  return (
+    <div className={`flex flex-wrap gap-1 ${compact ? '' : 'mt-1'}`}>
+      {displayed.map(l => (
+        <span key={l.total} className="bg-blue-950/60 border border-blue-800/50 rounded px-1.5 py-0.5 text-xs flex gap-1">
+          <span className="text-blue-400 font-semibold">{l.total}</span>
+          <span className="text-green-400">+{l.over}</span>
+          <span className="text-gray-500">/</span>
+          <span className="text-red-400">-{l.under}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Sous-match card ───────────────────────────────────────────────────────────
 
 function SubMatchCard({ match, expanded, onToggle }: {
@@ -41,7 +58,7 @@ function SubMatchCard({ match, expanded, onToggle }: {
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const { name, homeTeam, awayTeam, odds, prediction, similarMatches } = match;
+  const { name, homeTeam, awayTeam, odds, overUnder, result, prediction, similarMatches } = match;
   const { sampleSize, homeWinPct, drawPct, awayWinPct } = prediction;
 
   const best =
@@ -53,32 +70,48 @@ function SubMatchCard({ match, expanded, onToggle }: {
         : { label: '2', pct: awayWinPct }
       : null;
 
+  const mainOU = overUnder?.find(l => l.total === '2.5');
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
       {/* En-tête match */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <div>
           <p className="font-semibold text-white">{name || `${homeTeam} vs ${awayTeam}`}</p>
-          <div className="flex gap-2 mt-1.5">
+          <div className="flex gap-2 mt-1.5 flex-wrap items-center">
             <OddsBadge label="1" value={odds.home} />
             <OddsBadge label="X" value={odds.draw} />
             <OddsBadge label="2" value={odds.away} />
           </div>
+          <OverUnderBadges lines={overUnder} />
         </div>
-        {best && (
-          <div className="text-center">
-            <p className="text-xs text-gray-400 mb-1">Tendance</p>
-            <span
-              className={`text-2xl font-black ${
+        <div className="flex flex-col items-end gap-1">
+          {/* Score si disponible */}
+          {result && (
+            <div className="flex items-center gap-2">
+              <span className="text-white font-black text-lg">
+                {result.homeScore} – {result.awayScore}
+              </span>
+              <OutcomeBadge home={result.homeScore} away={result.awayScore} />
+            </div>
+          )}
+          {best && !result && (
+            <div className="text-center">
+              <p className="text-xs text-gray-400 mb-1">Tendance</p>
+              <span className={`text-2xl font-black ${
                 best.label === '1' ? 'text-green-400' :
                 best.label === '2' ? 'text-red-400' : 'text-yellow-400'
-              }`}
-            >
-              {best.label}
-            </span>
-            <p className="text-xs text-gray-400">{best.pct}%</p>
-          </div>
-        )}
+              }`}>{best.label}</span>
+              <p className="text-xs text-gray-400">{best.pct}%</p>
+            </div>
+          )}
+          {best && result && (
+            <span className={`text-sm font-bold ${
+              best.label === '1' ? 'text-green-400' :
+              best.label === '2' ? 'text-red-400' : 'text-yellow-400'
+            }`}>Tendance: {best.label} ({best.pct}%)</span>
+          )}
+        </div>
       </div>
 
       {/* Probabilités */}
@@ -113,30 +146,38 @@ function SubMatchCard({ match, expanded, onToggle }: {
       )}
       {expanded && (
         <div className="mt-3 space-y-2">
-          {similarMatches.map((s, i) => (
-            <div key={i} className="bg-gray-800 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-400">{s.league_name} — R{s.round_number}</p>
-                <p className="text-sm text-white truncate">{s.matchName}</p>
-                <div className="flex gap-1.5 mt-1">
-                  <OddsBadge label="1" value={s.odds.home} />
-                  <OddsBadge label="X" value={s.odds.draw} />
-                  <OddsBadge label="2" value={s.odds.away} />
+          {similarMatches.map((s, i) => {
+            const simOU = s.overUnder?.find(l => l.total === '2.5');
+            const ouMatch = !!(mainOU && simOU &&
+              mainOU.over === simOU.over && mainOU.under === simOU.under);
+            return (
+              <div key={i} className={`rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap ${
+                ouMatch ? 'bg-yellow-900/40 border border-yellow-600/60' : 'bg-gray-800'
+              }`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-400">{s.league_name} — R{s.round_number}</p>
+                  <p className="text-sm text-white truncate">{s.matchName}</p>
+                  <div className="flex gap-1.5 mt-1 flex-wrap">
+                    <OddsBadge label="1" value={s.odds.home} />
+                    <OddsBadge label="X" value={s.odds.draw} />
+                    <OddsBadge label="2" value={s.odds.away} />
+                  </div>
+                  <OverUnderBadges lines={s.overUnder} compact />
+                </div>
+                <div className="text-right flex flex-col items-end gap-1">
+                  <span className="text-xs text-gray-500">dist: {s.distance}</span>
+                  {s.result ? (
+                    <>
+                      <span className="font-bold text-white">{s.result.homeScore} – {s.result.awayScore}</span>
+                      <OutcomeBadge home={s.result.homeScore} away={s.result.awayScore} />
+                    </>
+                  ) : (
+                    <span className="text-gray-500 text-xs">—</span>
+                  )}
                 </div>
               </div>
-              <div className="text-right flex flex-col items-end gap-1">
-                <span className="text-xs text-gray-500">dist: {s.distance}</span>
-                {s.result ? (
-                  <>
-                    <span className="font-bold text-white">{s.result.homeScore} – {s.result.awayScore}</span>
-                    <OutcomeBadge home={s.result.homeScore} away={s.result.awayScore} />
-                  </>
-                ) : (
-                  <span className="text-gray-500 text-xs">—</span>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

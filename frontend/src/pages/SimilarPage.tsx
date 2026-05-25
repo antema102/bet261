@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { fetchSimilar, fetchLeagues } from '../api';
-import type { SimilarResponse, SimilarResult, LeagueOption } from '../types';
+import type { SimilarResponse, SimilarResult, LeagueOption, OverUnderLine } from '../types';
 import { useEffect } from 'react';
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
@@ -45,6 +45,24 @@ function PctDonut({ homeWin, draw, awayWin }: { homeWin: number; draw: number; a
   );
 }
 
+function OverUnderBadges({ lines }: { lines?: OverUnderLine[] }) {
+  if (!lines || lines.length === 0) return null;
+  const displayed = lines.filter(l => l.total === '2.5');
+  if (displayed.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {displayed.map(l => (
+        <span key={l.total} className="bg-blue-950/60 border border-blue-800/50 rounded px-1.5 py-0.5 text-xs flex gap-1">
+          <span className="text-blue-400 font-semibold">{l.total}</span>
+          <span className="text-green-400">+{l.over}</span>
+          <span className="text-gray-500">/</span>
+          <span className="text-red-400">-{l.under}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Carte résultat similaire ──────────────────────────────────────────────────
 
 function SimilarCard({ m }: { m: SimilarResult }) {
@@ -77,6 +95,8 @@ function SimilarCard({ m }: { m: SimilarResult }) {
         ))}
         <span className="text-gray-500 ml-auto">dist: {m.distance}</span>
       </div>
+      {/* Cotes +/- */}
+      <OverUnderBadges lines={m.overUnder} />
     </div>
   );
 }
@@ -87,6 +107,10 @@ export default function SimilarPage() {
   const [home, setHome] = useState('');
   const [draw, setDraw] = useState('');
   const [away, setAway] = useState('');
+  const [over15, setOver15]   = useState('');
+  const [under15, setUnder15] = useState('');
+  const [over25, setOver25]   = useState('');
+  const [under25, setUnder25] = useState('');
   const [tolerance, setTolerance] = useState(0.20);
   const [leagueId, setLeagueId] = useState<number | null>(null);
   const [limit, setLimit] = useState(30);
@@ -128,7 +152,7 @@ export default function SimilarPage() {
         onSubmit={search}
         className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6"
       >
-        <h2 className="text-white font-semibold mb-4">🔍 Recherche par cotes 1X2</h2>
+        <h2 className="text-white font-semibold mb-4">🔍 Recherche par cotes 1X2 &amp; Over/Under</h2>
         <div className="flex flex-wrap gap-4 items-end">
           {/* Cotes */}
           {[
@@ -146,6 +170,32 @@ export default function SimilarPage() {
                 onChange={e => set(e.target.value)}
                 placeholder="ex: 1.50"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          ))}
+
+          {/* Séparateur Over/Under optionnel */}
+          <div className="w-full flex items-center gap-2 mt-1">
+            <div className="flex-1 h-px bg-gray-800" />
+            <span className="text-xs text-blue-400 font-semibold whitespace-nowrap">+/- Over/Under (optionnel)</span>
+            <div className="flex-1 h-px bg-gray-800" />
+          </div>
+          {[
+            { label: 'Over 1.5', val: over15, set: setOver15 },
+            { label: 'Under 1.5', val: under15, set: setUnder15 },
+            { label: 'Over 2.5', val: over25, set: setOver25 },
+            { label: 'Under 2.5', val: under25, set: setUnder25 },
+          ].map(({ label, val, set }) => (
+            <div key={label} className="flex-1 min-w-24">
+              <label className="block text-xs text-gray-400 mb-1">{label}</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                value={val}
+                onChange={e => set(e.target.value)}
+                placeholder="ex: 1.75"
+                className="w-full bg-gray-800 border border-blue-900/50 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
               />
             </div>
           ))}

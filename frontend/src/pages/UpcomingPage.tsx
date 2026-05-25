@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchUpcoming, fetchLeagues } from '../api';
-import type { DailyRound, DailySubMatch, LeagueOption } from '../types';
+import type { DailyRound, DailySubMatch, LeagueOption, OverUnderLine } from '../types';
 
 const AUTO_REFRESH_SEC = 30;
 
@@ -68,6 +68,27 @@ function ProbaBars({ homeWinPct, drawPct, awayWinPct, sampleSize }: {
   );
 }
 
+// ── Badges Over/Under ───────────────────────────────────────────────────
+
+function OverUnderBadges({ lines, compact = false }: { lines: OverUnderLine[]; compact?: boolean }) {
+  if (!lines || lines.length === 0) return null;
+  // Affiche seulement les seuils utiles (0.5 à 3.5)
+  const displayed = lines.filter(l => l.total === '2.5');
+  if (displayed.length === 0) return null;
+  return (
+    <div className={`flex flex-wrap gap-1 ${compact ? '' : 'mt-1'}`}>
+      {displayed.map(l => (
+        <span key={l.total} className="bg-blue-950/60 border border-blue-800/50 rounded px-1.5 py-0.5 text-xs flex gap-1">
+          <span className="text-blue-400 font-semibold">{l.total}</span>
+          <span className="text-green-400">+{l.over}</span>
+          <span className="text-gray-500">/</span>
+          <span className="text-red-400">-{l.under}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Carte sous-match ─────────────────────────────────────────────────────────
 
 function MatchCard({ m, expanded, onToggle }: {
@@ -75,7 +96,7 @@ function MatchCard({ m, expanded, onToggle }: {
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const { name, homeTeam, awayTeam, odds, prediction, similarMatches } = m;
+  const { name, homeTeam, awayTeam, odds, overUnder, prediction, similarMatches } = m;
   const { homeWinPct, drawPct, awayWinPct, sampleSize } = prediction;
 
   const items = [
@@ -105,6 +126,8 @@ function MatchCard({ m, expanded, onToggle }: {
               </span>
             ))}
           </div>
+          {/* Cotes +/- */}
+          <OverUnderBadges lines={overUnder} />
         </div>
         {best && (
           <div className="text-center shrink-0">
@@ -141,8 +164,17 @@ function MatchCard({ m, expanded, onToggle }: {
                   ? s.result.homeScore > s.result.awayScore ? '1'
                   : s.result.homeScore < s.result.awayScore ? '2' : 'X'
                   : null;
+                // Fond jaune si les cotes +/- 2.5 sont identiques au match principal
+                const mainOU = overUnder.find(l => l.total === '2.5');
+                const simOU  = s.overUnder?.find(l => l.total === '2.5');
+                const ouMatch = !!(mainOU && simOU &&
+                  mainOU.over === simOU.over && mainOU.under === simOU.under);
                 return (
-                  <div key={i} className="bg-gray-800 rounded-lg p-2.5 flex flex-col gap-1.5">
+                  <div key={i} className={`rounded-lg p-2.5 flex flex-col gap-1.5 ${
+                    ouMatch
+                      ? 'bg-yellow-900/40 border border-yellow-600/60'
+                      : 'bg-gray-800'
+                  }`}>
                     {/* Ligne 1 : ligue + résultat */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -174,6 +206,10 @@ function MatchCard({ m, expanded, onToggle }: {
                         <span className="ml-auto text-xs text-gray-600 italic">Δ {s.distance.toFixed(2)}</span>
                       )}
                     </div>
+                    {/* Cotes +/- du similaire */}
+                    {s.overUnder?.length > 0 && (
+                      <OverUnderBadges lines={s.overUnder} compact />
+                    )}
                   </div>
                 );
               })}

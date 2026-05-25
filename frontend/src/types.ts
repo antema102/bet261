@@ -1,3 +1,10 @@
+// ── Cotes Over/Under (+/-) ────────────────────────────────────────────────────
+export interface OverUnderLine {
+  total: string;   // ex: "1.5"
+  over: number;    // cote > X.X
+  under: number;   // cote < X.X
+}
+
 // ── Cotes 1X2 ─────────────────────────────────────────────────────────────────
 export interface OddsTriple {
   home: number;
@@ -22,6 +29,7 @@ export interface SimilarMatch {
   homeTeam: string;
   awayTeam: string;
   odds: OddsTriple;
+  overUnder: OverUnderLine[];
   distance: number;
   result: { homeScore: number; awayScore: number } | null;
   matchMethod?: string;
@@ -34,6 +42,8 @@ export interface DailySubMatch {
   homeTeam: string;
   awayTeam: string;
   odds: OddsTriple;
+  overUnder: OverUnderLine[];
+  result: { homeScore: number; awayScore: number } | null;
   prediction: Prediction;
   similarMatches: SimilarMatch[];
 }
@@ -92,6 +102,7 @@ export interface SimilarResult {
   homeTeam: string;
   awayTeam: string;
   odds: OddsTriple;
+  overUnder: OverUnderLine[];
   distance: number;
   result: { homeScore: number; awayScore: number } | null;
 }

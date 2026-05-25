@@ -7,6 +7,7 @@ const router = Router();
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 interface OddsTriple { home: number; draw: number; away: number }
+interface OverUnderLine { total: string; over: number; under: number }
 
 function getStoredMatches(oddsData: any): any[] {
   if (Array.isArray(oddsData?.matches) && oddsData.matches.length > 0) {
@@ -37,6 +38,27 @@ function extract1X2(eventBetTypes: any[]): OddsTriple | null {
 }
 
 /**
+ * Extrait les cotes Over/Under (+/-) d'un match
+ */
+function extractOverUnder(eventBetTypes: any[]): OverUnderLine[] {
+  if (!Array.isArray(eventBetTypes)) return [];
+  const result: OverUnderLine[] = [];
+  for (const bt of eventBetTypes) {
+    if (bt.name !== '+/-') continue;
+    let total = '';
+    try { total = JSON.parse(bt.betTypeContext ?? '{}')?.total ?? ''; } catch { /**/ }
+    if (total !== '2.5') continue;  // uniquement Over/Under 2.5
+    const items: any[] = bt.eventBetTypeItems ?? [];
+    const overItem  = items.find((i: any) => String(i.shortName ?? '').startsWith('>'));
+    const underItem = items.find((i: any) => String(i.shortName ?? '').startsWith('<'));
+    if (overItem && underItem) {
+      result.push({ total, over: overItem.odds, under: underItem.odds });
+    }
+  }
+  return result;
+}
+
+/**
  * Extrait tous les sous-matchs d'un round avec leurs cotes 1X2
  */
 function extractRoundMatches(oddsData: any): Array<{
@@ -46,6 +68,7 @@ function extractRoundMatches(oddsData: any): Array<{
   homeTeam: string;
   awayTeam: string;
   odds: OddsTriple;
+  overUnder: OverUnderLine[];
 }> {
   const matches = getStoredMatches(oddsData);
   const result: any[] = [];
@@ -59,6 +82,7 @@ function extractRoundMatches(oddsData: any): Array<{
         homeTeam: m.homeTeam?.name ?? '?',
         awayTeam: m.awayTeam?.name ?? '?',
         odds,
+        overUnder: extractOverUnder(m.eventBetTypes),
       });
     }
   }
@@ -196,6 +220,7 @@ router.get('/similar', async (req: Request, res: Response) => {
             homeTeam: sm.homeTeam,
             awayTeam: sm.awayTeam,
             odds: sm.odds,
+            overUnder: sm.overUnder,
             distance: Math.round(dist * 1000) / 1000,
             result: score,
           });
@@ -207,11 +232,12 @@ router.get('/similar', async (req: Request, res: Response) => {
     similar.sort((a, b) => a.distance - b.distance);
     const top = similar.slice(0, limit);
 
-    // Statistiques rapides
-    const total = top.length;
-    const homeWins  = top.filter(m => m.result && m.result.homeScore > m.result.awayScore).length;
-    const draws     = top.filter(m => m.result && m.result.homeScore === m.result.awayScore).length;
-    const awayWins  = top.filter(m => m.result && m.result.homeScore < m.result.awayScore).length;
+    // Statistiques rapides — calculées uniquement sur les matchs avec résultat connu
+    const withResult = top.filter(m => m.result !== null);
+    const total      = withResult.length;
+    const homeWins   = withResult.filter(m => m.result.homeScore > m.result.awayScore).length;
+    const draws      = withResult.filter(m => m.result.homeScore === m.result.awayScore).length;
+    const awayWins   = withResult.filter(m => m.result.homeScore < m.result.awayScore).length;
 
     sendSuccess(res, {
       target: { home, draw, away },
@@ -261,7 +287,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       ...leagueFilter,
       ...timeFilter,
     })
-      .select('league_name league_id event_category_id round_number expected_start odds_data')
+      .select('league_name league_id event_category_id round_number expected_start odds_data result_data')
       .sort({ expected_start: 1 })
       .lean();
 
@@ -274,7 +300,6 @@ router.get('/daily', async (req: Request, res: Response) => {
     })
       .select('league_name league_id event_category_id round_number odds_data result_data')
       .sort({ expected_start: -1 })
-      .limit(500)
       .lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
@@ -287,8 +312,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       matchName: string;
       homeTeam: string;
       awayTeam: string;
-      odds: OddsTriple;
-      result: { homeScore: number; awayScore: number };
+      odds: OddsTriple;      overUnder: OverUnderLine[];      result: { homeScore: number; awayScore: number };
     }> = [];
 
     for (const round of finishedRounds) {
@@ -306,6 +330,7 @@ router.get('/daily', async (req: Request, res: Response) => {
             homeTeam: subMatches[i].homeTeam,
             awayTeam: subMatches[i].awayTeam,
             odds: subMatches[i].odds,
+            overUnder: subMatches[i].overUnder,
             result: score,
           });
         }
@@ -326,7 +351,13 @@ router.get('/daily', async (req: Request, res: Response) => {
         matches: [],
       };
 
-      for (const sm of subMatches) {
+      for (let smIdx = 0; smIdx < subMatches.length; smIdx++) {
+        const sm = subMatches[smIdx];
+        // Score du sous-match si result_data disponible
+        const smScore = (round as any).result_data
+          ? extractScore((round as any).result_data, sm.matchId, sm.oddsId, smIdx, sm.homeTeam, sm.awayTeam)
+          : null;
+
         // Évite le spread `...h` (très coûteux en mémoire sur grands tableaux)
         // → filtre d'abord par distance, ne crée les objets résultats qu'à la fin
         const tolerance2 = tolerance * tolerance; // comparaison carré plus rapide
@@ -355,6 +386,7 @@ router.get('/daily', async (req: Request, res: Response) => {
           homeTeam:    h.homeTeam,
           awayTeam:    h.awayTeam,
           odds:        h.odds,
+          overUnder:   (h as any).overUnder ?? [],
           distance:    Math.round(h.distance * 1000) / 1000,
           result:      h.result,
         }));
@@ -365,6 +397,8 @@ router.get('/daily', async (req: Request, res: Response) => {
           homeTeam: sm.homeTeam,
           awayTeam: sm.awayTeam,
           odds: sm.odds,
+          overUnder: sm.overUnder,
+          result: smScore ? { homeScore: smScore.homeScore, awayScore: smScore.awayScore } : null,
           prediction: {
             sampleSize: total,
             homeWinPct: total ? Math.round((homeWins / total) * 100) : null,

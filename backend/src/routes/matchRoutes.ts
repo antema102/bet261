@@ -5,6 +5,44 @@ import { sendSuccess, sendError } from '../utils/response';
 const router = Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Champs inutiles à supprimer au niveau eventBetType
+// ─────────────────────────────────────────────────────────────────────────────
+const FIELDS_TO_DROP_BET_TYPE = new Set([
+  'minimumAmountIncrement', 'maximumAmount', 'active', 'bettingAllowed',
+  'displayPriority', 'hasExplanations', 'canBeSimulated', 'isManual',
+]);
+const FIELDS_TO_DROP_BET_ITEM = new Set(['active', 'bettingAllowed', 'canBeSimulated']);
+
+/**
+ * Ne garde que les cotes 1X2 et Over/Under (+/-) et supprime
+ * les champs inutiles pour alléger MongoDB.
+ */
+function cleanEventBetTypes(eventBetTypes: any[]): any[] {
+  if (!Array.isArray(eventBetTypes)) return [];
+
+  return eventBetTypes
+    .filter((bt: any) => bt.name === '1X2' || bt.name === '+/-')
+    .map((bt: any) => {
+      // Supprime les champs inutiles au niveau du bet type
+      const cleaned: Record<string, any> = {};
+      for (const [k, v] of Object.entries(bt)) {
+        if (!FIELDS_TO_DROP_BET_TYPE.has(k)) cleaned[k] = v;
+      }
+      // Supprime les champs inutiles dans chaque item
+      if (Array.isArray(cleaned.eventBetTypeItems)) {
+        cleaned.eventBetTypeItems = cleaned.eventBetTypeItems.map((item: any) => {
+          const cleanedItem: Record<string, any> = {};
+          for (const [k, v] of Object.entries(item)) {
+            if (!FIELDS_TO_DROP_BET_ITEM.has(k)) cleanedItem[k] = v;
+          }
+          return cleanedItem;
+        });
+      }
+      return cleaned;
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/matches/upsert
 // Crée ou met à jour un match (cotes) identifié par league_id + round_number
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +55,17 @@ router.post('/upsert', async (req: Request, res: Response) => {
     if (odds_data?.round?.matches) {
       const { matches: _dropped, ...roundMeta } = odds_data.round;
       cleanOddsData = { ...odds_data, round: roundMeta };
+    }
+
+    // Ne garde que 1X2 et +/- (Over/Under) dans eventBetTypes de chaque match
+    if (Array.isArray(cleanOddsData?.matches)) {
+      cleanOddsData = {
+        ...cleanOddsData,
+        matches: cleanOddsData.matches.map((m: any) => ({
+          ...m,
+          eventBetTypes: cleanEventBetTypes(m.eventBetTypes),
+        })),
+      };
     }
 
     const newExpectedStart = expected_start ? new Date(expected_start) : undefined;
@@ -115,6 +164,38 @@ router.post('/cleanup-round-matches', async (_req: Request, res: Response) => {
       matched: result.matchedCount,
       modified: result.modifiedCount,
     }, 200, `Migration terminée — ${result.modifiedCount} document(s) nettoyé(s)`);
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/matches/cleanup-bet-types
+// Migration : sur tous les documents existants, ne garde que 1X2 et +/- dans
+// eventBetTypes et supprime les champs inutiles (minimumAmountIncrement, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/cleanup-bet-types', async (_req: Request, res: Response) => {
+  try {
+    const docs = await Match.find({ 'odds_data.matches': { $exists: true } });
+    let modifiedCount = 0;
+
+    for (const doc of docs) {
+      const oddsData: any = doc.odds_data;
+      if (!Array.isArray(oddsData?.matches)) continue;
+
+      const cleaned = oddsData.matches.map((m: any) => ({
+        ...m,
+        eventBetTypes: cleanEventBetTypes(m.eventBetTypes),
+      }));
+
+      doc.odds_data = { ...oddsData, matches: cleaned };
+      doc.markModified('odds_data');
+      await doc.save();
+      modifiedCount++;
+    }
+
+    sendSuccess(res, { matched: docs.length, modified: modifiedCount }, 200,
+      `Migration bet-types — ${modifiedCount} document(s) nettoyé(s)`);
   } catch (error) {
     sendError(res, error);
   }
