@@ -194,7 +194,10 @@ router.get('/similar', async (req: Request, res: Response) => {
       odds_data: { $ne: null },
       result_data: { $ne: null },
       ...(leagueId ? { league_id: leagueId } : {}),
-    }).lean();
+    })
+      .select('league_name league_id event_category_id round_number expected_start odds_data result_data')
+      .sort({ expected_start: -1 })
+      .lean();
 
     // Pour chaque round, extraire chaque sous-match et vérifier la distance
     const similar: any[] = [];
@@ -291,7 +294,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       .sort({ expected_start: 1 })
       .lean();
 
-    // 2. Historique finished pour la comparaison (limité aux 500 derniers pour la perf)
+    // 2. Historique finished pour la comparaison (tous les rounds)
     const finishedRounds = await Match.find({
       status: 'finished',
       odds_data: { $ne: null },
