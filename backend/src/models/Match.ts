@@ -21,5 +21,6 @@ const matchSchema = new Schema<IMatch>(
 matchSchema.index({ league_id: 1, event_category_id: 1, round_number: 1 }, { unique: true });
 matchSchema.index({ status: 1, league_id: 1 });
 matchSchema.index({ status: 1, expected_start: 1 });
+matchSchema.index({ status: 1, league_id: 1, expected_start: 1 });
 
 export const Match = mongoose.model<IMatch>("Match", matchSchema);

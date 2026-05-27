@@ -100,6 +100,24 @@ export function oddsDistance(a: OddsTriple, b: OddsTriple): number {
   );
 }
 
+/**
+ * Distance euclidienne au carré (évite Math.sqrt pour les filtres)
+ */
+export function oddsDistanceSquared(a: OddsTriple, b: OddsTriple): number {
+  return (
+    (a.home - b.home) ** 2 +
+    (a.draw - b.draw) ** 2 +
+    (a.away - b.away) ** 2
+  );
+}
+
+/**
+ * Clé stable pour comparer rapidement des cotes identiques (tolérance = 0)
+ */
+export function oddsKey(odds: OddsTriple, precision = 3): string {
+  return `${odds.home.toFixed(precision)}|${odds.draw.toFixed(precision)}|${odds.away.toFixed(precision)}`;
+}
+
 // ─── Matching par équipes ─────────────────────────────────────────────────────
 
 /**

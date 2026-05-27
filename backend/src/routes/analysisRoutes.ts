@@ -6,7 +6,8 @@ import {
   OverUnderLine,
   extractRoundMatches,
   oddsDistance,
-  teamKey,
+  oddsDistanceSquared,
+  oddsKey,
   extractScore,
 } from '../helpers/oddsHelpers';
 
@@ -166,7 +167,6 @@ router.get('/daily', async (req: Request, res: Response) => {
       ...leagueFilter,
     })
       .select('league_name league_id event_category_id round_number odds_data result_data')
-      .sort({ expected_start: -1 })
       .lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
@@ -204,6 +204,15 @@ router.get('/daily', async (req: Request, res: Response) => {
       }
     }
 
+    // Index par cotes exactes (chemin rapide pour tolerance = 0)
+    const historicalByOddsKey = new Map<string, typeof historicalMatches>();
+    for (const h of historicalMatches) {
+      const key = oddsKey(h.odds);
+      const bucket = historicalByOddsKey.get(key);
+      if (bucket) bucket.push(h);
+      else historicalByOddsKey.set(key, [h]);
+    }
+
     // 3. Pour chaque match à venir, trouver les similaires et calculer les probas
     const dailyMatches: any[] = [];
 
@@ -220,41 +229,45 @@ router.get('/daily', async (req: Request, res: Response) => {
 
       for (let smIdx = 0; smIdx < subMatches.length; smIdx++) {
         const sm = subMatches[smIdx];
-        // Score du sous-match si result_data disponible
-        const smScore = (round as any).result_data
-          ? extractScore((round as any).result_data, sm.matchId, sm.oddsId, smIdx, sm.homeTeam, sm.awayTeam)
-          : null;
+        type SimilarWithDistance = { h: (typeof historicalMatches)[number]; distance: number };
+        let similarsWithDist: SimilarWithDistance[] = [];
 
-        // Évite le spread `...h` (très coûteux en mémoire sur grands tableaux)
-        // → filtre d'abord par distance, ne crée les objets résultats qu'à la fin
-        const tolerance2 = tolerance * tolerance; // comparaison carré plus rapide
-        const filtered: Array<typeof historicalMatches[0] & { distance: number }> = [];
-        for (const h of historicalMatches) {
-          const dist = oddsDistance(sm.odds, h.odds);
-          if (dist <= tolerance) {
-            filtered.push({ ...h, distance: dist } as any);
+        if (tolerance === 0) {
+          const exact = historicalByOddsKey.get(oddsKey(sm.odds)) ?? [];
+          similarsWithDist = exact.map((h) => ({ h, distance: 0 }));
+        } else {
+          const tolerance2 = tolerance * tolerance;
+          const filtered: SimilarWithDistance[] = [];
+          for (const h of historicalMatches) {
+            const dist2 = oddsDistanceSquared(sm.odds, h.odds);
+            if (dist2 <= tolerance2) {
+              filtered.push({ h, distance: Math.sqrt(dist2) });
+            }
           }
+          filtered.sort((a, b) => a.distance - b.distance);
+          similarsWithDist = filtered;
         }
-        filtered.sort((a, b) => a.distance - b.distance);
-
-        const similarsWithDist = filtered;
-        void tolerance2; // utilisé pour la clarté, la comparaison directe est faite via oddsDistance
 
         const total = similarsWithDist.length;
-        const homeWins = similarsWithDist.filter(s => s.result.homeScore > s.result.awayScore).length;
-        const draws    = similarsWithDist.filter(s => s.result.homeScore === s.result.awayScore).length;
-        const awayWins = similarsWithDist.filter(s => s.result.homeScore < s.result.awayScore).length;
+        let homeWins = 0;
+        let draws = 0;
+        let awayWins = 0;
+        for (const s of similarsWithDist) {
+          if (s.h.result.homeScore > s.h.result.awayScore) homeWins += 1;
+          else if (s.h.result.homeScore === s.h.result.awayScore) draws += 1;
+          else awayWins += 1;
+        }
 
-        const top5 = similarsWithDist.slice(0, 5).map(h => ({
-          matchId:     (h as any).matchId,
+        const top5 = similarsWithDist.slice(0, 5).map(({ h, distance }) => ({
+          matchId:     h.matchId,
           round_number: h.round_number,
           league_name: h.league_name,
           matchName:   h.matchName,
           homeTeam:    h.homeTeam,
           awayTeam:    h.awayTeam,
           odds:        h.odds,
-          overUnder:   (h as any).overUnder ?? [],
-          distance:    Math.round(h.distance * 1000) / 1000,
+          overUnder:   h.overUnder ?? [],
+          distance:    Math.round(distance * 1000) / 1000,
           result:      h.result,
         }));
 
@@ -266,7 +279,7 @@ router.get('/daily', async (req: Request, res: Response) => {
             awayTeam: sm.awayTeam,
             odds: sm.odds,
             overUnder: sm.overUnder,
-            result: smScore ? { homeScore: smScore.homeScore, awayScore: smScore.awayScore } : null,
+            result: null,
             prediction: {
               sampleSize: total,
               homeWinPct: total ? Math.round((homeWins / total) * 100) : null,
