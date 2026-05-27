@@ -59,9 +59,19 @@ export interface DailyRound {
 }
 
 // ── Réponse /api/analysis/daily ───────────────────────────────────────────────
+export interface Pagination {
+  page: number;
+  limit: number;
+  totalRounds: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
 export interface DailyResponse {
   tolerance: number;
   totalUpcoming: number;
+  pagination: Pagination;
   rounds: DailyRound[];
 }
 

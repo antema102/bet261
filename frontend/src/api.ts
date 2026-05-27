@@ -52,8 +52,10 @@ export async function fetchSimilar(
 export async function fetchUpcoming(
   tolerance: number,
   leagueId?: number | null,
+  page = 1,
+  limit = 5,
 ): Promise<DailyResponse> {
-  const params: Record<string, unknown> = { tolerance, future_only: 'true' };
+  const params: Record<string, unknown> = { tolerance, future_only: 'true', page, limit };
   if (leagueId) params.league_id = leagueId;
   const res = await api.get<{ data: DailyResponse }>('/analysis/daily', { params });
   return res.data.data;

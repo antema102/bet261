@@ -1,163 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { Match } from '../models/Match';
 import { sendSuccess, sendError } from '../utils/response';
+import {
+  OddsTriple,
+  OverUnderLine,
+  extractRoundMatches,
+  oddsDistance,
+  teamKey,
+  extractScore,
+} from '../helpers/oddsHelpers';
 
 const router = Router();
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-interface OddsTriple { home: number; draw: number; away: number }
-interface OverUnderLine { total: string; over: number; under: number }
-
-function getStoredMatches(oddsData: any): any[] {
-  if (Array.isArray(oddsData?.matches) && oddsData.matches.length > 0) {
-    return oddsData.matches;
-  }
-  if (Array.isArray(oddsData?.round?.matches)) {
-    return oddsData.round.matches;
-  }
-  if (Array.isArray(oddsData?.matches)) {
-    return oddsData.matches;
-  }
-  return [];
-}
-
-/**
- * Extrait les cotes 1X2 d'un match individuel (à l'intérieur de odds_data.round.matches[])
- */
-function extract1X2(eventBetTypes: any[]): OddsTriple | null {
-  if (!eventBetTypes) return null;
-  const bt = eventBetTypes.find((b: any) => b.name === '1X2');
-  if (!bt?.eventBetTypeItems) return null;
-  const items = bt.eventBetTypeItems;
-  const home = items.find((i: any) => i.shortName === '1')?.odds;
-  const draw = items.find((i: any) => i.shortName === 'X')?.odds;
-  const away = items.find((i: any) => i.shortName === '2')?.odds;
-  if (home == null || draw == null || away == null) return null;
-  return { home, draw, away };
-}
-
-/**
- * Extrait les cotes Over/Under (+/-) d'un match
- */
-function extractOverUnder(eventBetTypes: any[]): OverUnderLine[] {
-  if (!Array.isArray(eventBetTypes)) return [];
-  const result: OverUnderLine[] = [];
-  for (const bt of eventBetTypes) {
-    if (bt.name !== '+/-') continue;
-    let total = '';
-    try { total = JSON.parse(bt.betTypeContext ?? '{}')?.total ?? ''; } catch { /**/ }
-    if (total !== '2.5') continue;  // uniquement Over/Under 2.5
-    const items: any[] = bt.eventBetTypeItems ?? [];
-    const overItem  = items.find((i: any) => String(i.shortName ?? '').startsWith('>'));
-    const underItem = items.find((i: any) => String(i.shortName ?? '').startsWith('<'));
-    if (overItem && underItem) {
-      result.push({ total, over: overItem.odds, under: underItem.odds });
-    }
-  }
-  return result;
-}
-
-/**
- * Extrait tous les sous-matchs d'un round avec leurs cotes 1X2
- */
-function extractRoundMatches(oddsData: any): Array<{
-  matchId: number;
-  oddsId?: number;
-  name: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: OddsTriple;
-  overUnder: OverUnderLine[];
-}> {
-  const matches = getStoredMatches(oddsData);
-  const result: any[] = [];
-  for (const m of matches) {
-    const odds = extract1X2(m.eventBetTypes);
-    if (odds) {
-      result.push({
-        matchId: m.id,
-        oddsId: m.odds_id,
-        name: m.name ?? `${m.homeTeam?.name ?? '?'} vs ${m.awayTeam?.name ?? '?'}`,
-        homeTeam: m.homeTeam?.name ?? '?',
-        awayTeam: m.awayTeam?.name ?? '?',
-        odds,
-        overUnder: extractOverUnder(m.eventBetTypes),
-      });
-    }
-  }
-  return result;
-}
-
-/**
- * Distance euclidienne entre deux triplets de cotes
- */
-function oddsDistance(a: OddsTriple, b: OddsTriple): number {
-  return Math.sqrt(
-    (a.home - b.home) ** 2 +
-    (a.draw - b.draw) ** 2 +
-    (a.away - b.away) ** 2,
-  );
-}
-
-/**
- * Clé de matching par noms d'équipes (insensible à la casse)
- */
-function teamKey(homeTeam: any, awayTeam: any): string {
-  const h = (typeof homeTeam === 'object' ? homeTeam?.name : homeTeam) ?? '';
-  const a = (typeof awayTeam === 'object' ? awayTeam?.name : awayTeam) ?? '';
-  return `${String(h).trim().toLowerCase()}|${String(a).trim().toLowerCase()}`;
-}
-
-/**
- * Extrait le score final depuis result_data.
- * Stratégie de matching (dans l'ordre) :
- *   1. Par matchId direct
- *   2. Par noms d'équipes (homeTeam|awayTeam)
- *   3. Par index positionnel (dernier recours)
- */
-function extractScore(
-  resultData: any,
-  matchId: number,
-  oddsId: number | undefined,
-  index: number,
-  homeTeam?: string,
-  awayTeam?: string,
-): { homeScore: number; awayScore: number; matchMethod: string } | null {
-  if (!resultData?.matches) return null;
-  const rms: any[] = resultData.matches;
-
-  // 1. Par matchId
-  let rm = rms.find((m: any) => m.id === matchId);
-  let method = 'id';
-
-  // 2. Par noms d'équipes
-  if (!rm && homeTeam && awayTeam) {
-    const key = teamKey(homeTeam, awayTeam);
-    rm = rms.find((m: any) => teamKey(m.homeTeam, m.awayTeam) === key);
-    if (rm) method = 'name';
-  }
-
-  // 3. Par index positionnel
-  if (!rm && index < rms.length) {
-    rm = rms[index];
-    method = 'index';
-  }
-
-  if (!rm) return null;
-
-  if (typeof rm.homeScore === 'number' && typeof rm.awayScore === 'number') {
-    return { homeScore: rm.homeScore, awayScore: rm.awayScore, matchMethod: method };
-  }
-  const goals = rm.goals ?? [];
-  if (goals.length === 0) return { homeScore: 0, awayScore: 0, matchMethod: method };
-  const last = goals[goals.length - 1];
-  return {
-    homeScore: Math.round(last.homeScore ?? 0),
-    awayScore: Math.round(last.awayScore ?? 0),
-    matchMethod: method,
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/analysis/similar
@@ -199,7 +52,6 @@ router.get('/similar', async (req: Request, res: Response) => {
       .sort({ expected_start: -1 })
       .lean();
 
-    // Pour chaque round, extraire chaque sous-match et vérifier la distance
     const similar: any[] = [];
 
     for (const round of finishedRounds) {
@@ -264,13 +116,13 @@ router.get('/similar', async (req: Request, res: Response) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/analysis/daily
-// Retourne les matchs à venir (upcoming) avec, pour chaque sous-match, les
-// probabilités estimées basées sur l'historique des cotes similaires.
 //
 // Query params :
-//   tolerance    — distance max (défaut 0.30)
+//   tolerance    — distance max (défaut 0.00)
 //   league_id    — optionnel, filtre par ligue
 //   future_only  — si "true", ne retourne que les rounds dont expected_start > now
+//   page         — numéro de page (défaut 1)
+//   limit        — rounds par page (défaut 5, max 20)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/daily', async (req: Request, res: Response) => {
   try {
@@ -280,18 +132,30 @@ router.get('/daily', async (req: Request, res: Response) => {
       ? { league_id: parseInt(req.query.league_id as string) }
       : {};
 
+    // Pagination
+    const page  = Math.max(1, parseInt(req.query.page  as string) || 1);
+    const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 5));
+    const skip  = (page - 1) * limit;
+
     // Filtre temporel : uniquement les rounds dont le début est dans le futur
     const timeFilter = futureOnly ? { expected_start: { $gt: new Date() } } : {};
 
-    // 1. Matchs à venir
-    const upcomingRounds = await Match.find({
+    const matchQuery = {
       status: 'upcoming',
       odds_data: { $ne: null },
       ...leagueFilter,
       ...timeFilter,
-    })
+    };
+
+    // Compte total pour la pagination
+    const totalRounds = await Match.countDocuments(matchQuery);
+
+    // 1. Matchs à venir — uniquement la page demandée
+    const upcomingRounds = await Match.find(matchQuery)
       .select('league_name league_id event_category_id round_number expected_start odds_data result_data')
       .sort({ expected_start: 1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
     // 2. Historique finished pour la comparaison (tous les rounds)
@@ -394,29 +258,40 @@ router.get('/daily', async (req: Request, res: Response) => {
           result:      h.result,
         }));
 
-        roundEntry.matches.push({
-          matchId: sm.matchId,
-          name: sm.name,
-          homeTeam: sm.homeTeam,
-          awayTeam: sm.awayTeam,
-          odds: sm.odds,
-          overUnder: sm.overUnder,
-          result: smScore ? { homeScore: smScore.homeScore, awayScore: smScore.awayScore } : null,
-          prediction: {
-            sampleSize: total,
-            homeWinPct: total ? Math.round((homeWins / total) * 100) : null,
-            drawPct:    total ? Math.round((draws / total) * 100) : null,
-            awayWinPct: total ? Math.round((awayWins / total) * 100) : null,
-          },
-          similarMatches: top5,
-        });
+        if (total > 0) {
+          roundEntry.matches.push({
+            matchId: sm.matchId,
+            name: sm.name,
+            homeTeam: sm.homeTeam,
+            awayTeam: sm.awayTeam,
+            odds: sm.odds,
+            overUnder: sm.overUnder,
+            result: smScore ? { homeScore: smScore.homeScore, awayScore: smScore.awayScore } : null,
+            prediction: {
+              sampleSize: total,
+              homeWinPct: total ? Math.round((homeWins / total) * 100) : null,
+              drawPct:    total ? Math.round((draws / total) * 100) : null,
+              awayWinPct: total ? Math.round((awayWins / total) * 100) : null,
+            },
+            similarMatches: top5,
+          });
+        }
       }
-
-      dailyMatches.push(roundEntry);
+      if (roundEntry.matches.length > 0) {
+        dailyMatches.push(roundEntry);
+      }
     }
 
     sendSuccess(res, {
       tolerance,
+      pagination: {
+        page,
+        limit,
+        totalRounds,
+        totalPages: Math.ceil(totalRounds / limit),
+        hasNextPage: page * limit < totalRounds,
+        hasPrevPage: page > 1,
+      },
       totalUpcoming: dailyMatches.length,
       rounds: dailyMatches,
     });

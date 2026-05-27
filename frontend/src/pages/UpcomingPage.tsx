@@ -3,6 +3,7 @@ import { fetchUpcoming, fetchLeagues } from '../api';
 import type { DailyRound, DailySubMatch, LeagueOption, OverUnderLine } from '../types';
 
 const AUTO_REFRESH_SEC = 30;
+const PAGE_SIZE = 5;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -281,23 +282,31 @@ function RoundBlock({ rnd, expanded, onToggle }: {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function UpcomingPage() {
-  const [tolerance, setTolerance] = useState(0.00);
-  const [leagueId, setLeagueId] = useState<number | null>(null);
-  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
-  const [data, setData] = useState<DailyRound[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [tolerance, setTolerance]   = useState(0.00);
+  const [leagueId, setLeagueId]     = useState<number | null>(null);
+  const [leagues, setLeagues]       = useState<LeagueOption[]>([]);
+  const [data, setData]             = useState<DailyRound[]>([]);
+  const [page, setPage]             = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [expanded, setExpanded]     = useState<Record<string, boolean>>({});
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [countdown, setCountdown] = useState(AUTO_REFRESH_SEC);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [countdown, setCountdown]   = useState(AUTO_REFRESH_SEC);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  // Chargement page 1 (reset complet)
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetchUpcoming(tolerance, leagueId);
+      const res = await fetchUpcoming(tolerance, leagueId, 1, PAGE_SIZE);
       setData(res.rounds);
+      setPage(1);
+      setHasNextPage(res.pagination.hasNextPage);
       setLastRefresh(new Date());
       setCountdown(AUTO_REFRESH_SEC);
     } catch (e: unknown) {
@@ -307,9 +316,24 @@ export default function UpcomingPage() {
     }
   }, [tolerance, leagueId]);
 
+  // Chargement page suivante (accumulation)
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasNextPage) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const res = await fetchUpcoming(tolerance, leagueId, nextPage, PAGE_SIZE);
+      setData(prev => [...prev, ...res.rounds]);
+      setPage(nextPage);
+      setHasNextPage(res.pagination.hasNextPage);
+    } catch { /* silencieux */ }
+    finally { setLoadingMore(false); }
+  }, [loadingMore, hasNextPage, page, tolerance, leagueId]);
+
   // Auto-refresh toutes les 30s
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
+    if (!autoRefresh) return;
     timerRef.current = setInterval(() => {
       setCountdown(c => {
         if (c <= 1) {
@@ -320,7 +344,23 @@ export default function UpcomingPage() {
       });
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [load]);
+  }, [load, autoRefresh]);
+
+  // Infinite scroll — IntersectionObserver sur le sentinel
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   useEffect(() => {
     fetchLeagues().then(setLeagues).catch(() => {});
@@ -370,11 +410,29 @@ export default function UpcomingPage() {
         </button>
 
         {/* Statut auto-refresh */}
-        <div className="ml-auto text-right">
-          <p className="text-xs text-gray-500">
-            Refresh auto dans{' '}
-            <span className="text-orange-400 font-bold">{countdown}s</span>
-          </p>
+        <div className="ml-auto text-right flex flex-col items-end gap-1">
+          <button
+            onClick={() => {
+              setAutoRefresh(prev => {
+                if (!prev) setCountdown(AUTO_REFRESH_SEC);
+                return !prev;
+              });
+            }}
+            className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
+              autoRefresh
+                ? 'bg-orange-900/40 border-orange-700/60 text-orange-300 hover:bg-red-900/40 hover:border-red-600 hover:text-red-300'
+                : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-green-900/30 hover:border-green-600 hover:text-green-300'
+            }`}
+          >
+            {autoRefresh ? '⏸ Pause auto-refresh' : '▶ Reprendre auto-refresh'}
+          </button>
+          {autoRefresh ? (
+            <p className="text-xs text-gray-500">
+              Refresh dans <span className="text-orange-400 font-bold">{countdown}s</span>
+            </p>
+          ) : (
+            <p className="text-xs text-gray-600 italic">Auto-refresh pausé</p>
+          )}
           {lastRefresh && (
             <p className="text-xs text-gray-600">
               Mis à jour : {lastRefresh.toLocaleTimeString('fr-FR')}
@@ -421,6 +479,22 @@ export default function UpcomingPage() {
           />
         ))}
       </div>
+
+      {/* Sentinel infinite scroll */}
+      <div ref={sentinelRef} className="h-8" />
+
+      {/* Indicateur bas de page */}
+      {data.length > 0 && (
+        <div className="text-center py-4 text-xs text-gray-600">
+          {loadingMore ? (
+            <span className="animate-pulse text-purple-400">↓ Chargement de la suite…</span>
+          ) : hasNextPage ? (
+            <span className="text-gray-500">↓ Scroll pour charger plus</span>
+          ) : (
+            <span>{data.length} round(s) affiché(s) — fin des résultats</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
