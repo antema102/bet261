@@ -19,8 +19,8 @@ function timeUntil(isoDate: string): string {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('fr-FR', {
-    day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
   });
 }
 
@@ -73,8 +73,8 @@ function ProbaBars({ homeWinPct, drawPct, awayWinPct, sampleSize }: {
 
 function OverUnderBadges({ lines, compact = false }: { lines: OverUnderLine[]; compact?: boolean }) {
   if (!lines || lines.length === 0) return null;
-  // Affiche seulement les seuils utiles (0.5 à 3.5)
-  const displayed = lines.filter(l => l.total === '2.5');
+  // Affiche toutes les lignes disponibles (0.5, 1.5, 2.5, 3.5...)
+  const displayed = lines.filter(l => ['0.5', '1.5', '2.5', '3.5'].includes(l.total));
   if (displayed.length === 0) return null;
   return (
     <div className={`flex flex-wrap gap-1 ${compact ? '' : 'mt-1'}`}>
@@ -118,7 +118,7 @@ function MatchCard({ m, expanded, onToggle }: {
       {/* Équipes + cotes */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-semibold text-white text-sm">{name || `${homeTeam} vs ${awayTeam}`}</p>
+        <p className="font-semibold text-white text-sm">{name || `${homeTeam} vs ${awayTeam}`}</p>
           <div className="flex gap-1.5 mt-1.5 flex-wrap">
             {[['1', odds.home], ['X', odds.draw], ['2', odds.away]].map(([l, v]) => (
               <span key={l as string} className="bg-gray-800 rounded px-2 py-0.5 text-xs">
@@ -165,11 +165,13 @@ function MatchCard({ m, expanded, onToggle }: {
                   ? s.result.homeScore > s.result.awayScore ? '1'
                   : s.result.homeScore < s.result.awayScore ? '2' : 'X'
                   : null;
-                // Fond jaune si les cotes +/- 2.5 sont identiques au match principal
-                const mainOU = overUnder.find(l => l.total === '2.5');
-                const simOU  = s.overUnder?.find(l => l.total === '2.5');
-                const ouMatch = !!(mainOU && simOU &&
-                  mainOU.over === simOU.over && mainOU.under === simOU.under);
+                // Fond jaune seulement si TOUTES les lignes O/U du match principal sont identiques dans le similaire
+                const mainOULines = overUnder.filter(l => ['0.5', '1.5', '2.5', '3.5'].includes(l.total));
+                const ouMatch = mainOULines.length > 0 && mainOULines.every(mainLine => {
+                  const simLine = s.overUnder?.find(l => l.total === mainLine.total);
+                  return !!(simLine &&
+                    mainLine.over === simLine.over && mainLine.under === simLine.under);
+                });
                 return (
                   <div key={i} className={`rounded-lg p-2.5 flex flex-col gap-1.5 ${
                     ouMatch
@@ -180,6 +182,9 @@ function MatchCard({ m, expanded, onToggle }: {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-gray-400">{s.league_name} R{s.round_number}</p>
+                        {s.expected_start && (
+                          <p className="text-xs text-gray-500">🕐 {formatDate(s.expected_start)}</p>
+                        )}
                         <p className="text-xs text-white truncate">{s.matchName}</p>
                       </div>
                       {s.result && (

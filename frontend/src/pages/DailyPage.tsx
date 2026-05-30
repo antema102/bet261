@@ -35,7 +35,7 @@ function OutcomeBadge({ home, away }: { home: number; away: number }) {
 }
 
 function OverUnderBadges({ lines, compact = false }: { lines?: OverUnderLine[]; compact?: boolean }) {
-  const displayed = (lines ?? []).filter(l => l.total === '2.5');
+  const displayed = (lines ?? []).filter(l => ['0.5', '1.5', '2.5', '3.5'].includes(l.total));
   if (displayed.length === 0) return null;
   return (
     <div className={`flex flex-wrap gap-1 ${compact ? '' : 'mt-1'}`}>
@@ -53,10 +53,11 @@ function OverUnderBadges({ lines, compact = false }: { lines?: OverUnderLine[]; 
 
 // ── Sous-match card ───────────────────────────────────────────────────────────
 
-function SubMatchCard({ match, expanded, onToggle }: {
+function SubMatchCard({ match, expanded, onToggle, matchDate }: {
   match: DailySubMatch;
   expanded: boolean;
   onToggle: () => void;
+  matchDate?: string;
 }) {
   const { name, homeTeam, awayTeam, odds, overUnder, result, prediction, similarMatches } = match;
   const { sampleSize, homeWinPct, drawPct, awayWinPct } = prediction;
@@ -78,6 +79,14 @@ function SubMatchCard({ match, expanded, onToggle }: {
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <div>
           <p className="font-semibold text-white">{name || `${homeTeam} vs ${awayTeam}`}</p>
+          {matchDate && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              🕐 {new Date(matchDate).toLocaleString('fr-FR', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+              })}
+            </p>
+          )}
           <div className="flex gap-2 mt-1.5 flex-wrap items-center">
             <OddsBadge label="1" value={odds.home} />
             <OddsBadge label="X" value={odds.draw} />
@@ -156,6 +165,14 @@ function SubMatchCard({ match, expanded, onToggle }: {
               }`}>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-400">{s.league_name} — R{s.round_number}</p>
+                  {s.expected_start && (
+                    <p className="text-xs text-gray-500">
+                      🕐 {new Date(s.expected_start).toLocaleString('fr-FR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                      })}
+                    </p>
+                  )}
                   <p className="text-sm text-white truncate">{s.matchName}</p>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
                     <OddsBadge label="1" value={s.odds.home} />
@@ -280,8 +297,8 @@ export default function DailyPage() {
               <span className="text-gray-500 text-sm">
                 {rnd.expected_start
                   ? new Date(rnd.expected_start).toLocaleString('fr-FR', {
-                      day: '2-digit', month: '2-digit',
-                      hour: '2-digit', minute: '2-digit',
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit', second: '2-digit',
                     })
                   : '—'}
               </span>
@@ -296,6 +313,7 @@ export default function DailyPage() {
                     match={m}
                     expanded={!!expanded[key]}
                     onToggle={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
+                    matchDate={rnd.expected_start}
                   />
                 );
               })}

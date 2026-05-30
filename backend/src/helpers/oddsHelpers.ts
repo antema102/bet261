@@ -36,23 +36,46 @@ export function extract1X2(eventBetTypes: any[]): OddsTriple | null {
 }
 
 /**
- * Extrait les cotes Over/Under (+/-) d'un match — uniquement Over/Under 2.5
+ * Extrait les cotes Over/Under (+/-) d'un match — toutes les lignes disponibles
  */
 export function extractOverUnder(eventBetTypes: any[]): OverUnderLine[] {
   if (!Array.isArray(eventBetTypes)) return [];
   const result: OverUnderLine[] = [];
   for (const bt of eventBetTypes) {
     if (bt.name !== '+/-') continue;
+
+    // total peut être dans bt.betTypeContext ou dans bt.eventBetTypeItems[*].betTypeContext
     let total = '';
     try { total = JSON.parse(bt.betTypeContext ?? '{}')?.total ?? ''; } catch { /**/ }
-    if (total !== '2.5') continue;
+    if (!total) {
+      // Fallback : chercher dans le premier item
+      const firstItem = (bt.eventBetTypeItems ?? [])[0];
+      try { total = JSON.parse(firstItem?.betTypeContext ?? '{}')?.total ?? ''; } catch { /**/ }
+    }
+    if (!total) continue;
+
     const items: any[] = bt.eventBetTypeItems ?? [];
-    const overItem  = items.find((i: any) => String(i.shortName ?? '').startsWith('>'));
-    const underItem = items.find((i: any) => String(i.shortName ?? '').startsWith('<'));
-    if (overItem && underItem) {
-      result.push({ total, over: overItem.odds, under: underItem.odds });
+    if (items.length < 2) continue;
+
+    // Stratégie 1 : par shortName (> / <)
+    let overItem  = items.find((i: any) => String(i.shortName ?? '').includes('>'));
+    let underItem = items.find((i: any) => String(i.shortName ?? '').includes('<'));
+
+    // Stratégie 2 : par position (index 0 = over, index 1 = under)
+    if (!overItem || !underItem) {
+      overItem  = items[0];
+      underItem = items[1];
+    }
+
+    const overOdds  = overItem?.odds  ?? overItem?.value;
+    const underOdds = underItem?.odds ?? underItem?.value;
+
+    if (overOdds != null && underOdds != null) {
+      result.push({ total, over: overOdds, under: underOdds });
     }
   }
+  // Trier par valeur de total croissante (0.5, 1.5, 2.5...)
+  result.sort((a, b) => parseFloat(a.total) - parseFloat(b.total));
   return result;
 }
 

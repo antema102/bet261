@@ -166,7 +166,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       result_data: { $ne: null },
       ...leagueFilter,
     })
-      .select('league_name league_id event_category_id round_number odds_data result_data')
+      .select('league_name league_id event_category_id round_number expected_start odds_data result_data')
       .lean();
 
     // Pré-extraire tous les sous-matchs finished avec leurs scores
@@ -175,6 +175,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       league_id: number;
       round_number: number;
       event_category_id: number;
+      expected_start?: Date;
       matchId?: number;
       matchName: string;
       homeTeam: string;
@@ -192,6 +193,7 @@ router.get('/daily', async (req: Request, res: Response) => {
             league_id: round.league_id,
             round_number: round.round_number,
             event_category_id: (round as any).event_category_id,
+            expected_start: (round as any).expected_start,
             matchId: subMatches[i].matchId,
             matchName: subMatches[i].name,
             homeTeam: subMatches[i].homeTeam,
@@ -259,16 +261,17 @@ router.get('/daily', async (req: Request, res: Response) => {
         }
 
         const top5 = similarsWithDist.slice(0, 5).map(({ h, distance }) => ({
-          matchId:     h.matchId,
-          round_number: h.round_number,
-          league_name: h.league_name,
-          matchName:   h.matchName,
-          homeTeam:    h.homeTeam,
-          awayTeam:    h.awayTeam,
-          odds:        h.odds,
-          overUnder:   h.overUnder ?? [],
-          distance:    Math.round(distance * 1000) / 1000,
-          result:      h.result,
+          matchId:        h.matchId,
+          round_number:   h.round_number,
+          league_name:    h.league_name,
+          expected_start: h.expected_start,
+          matchName:      h.matchName,
+          homeTeam:       h.homeTeam,
+          awayTeam:       h.awayTeam,
+          odds:           h.odds,
+          overUnder:      h.overUnder ?? [],
+          distance:       Math.round(distance * 1000) / 1000,
+          result:         h.result,
         }));
 
         if (total > 0) {

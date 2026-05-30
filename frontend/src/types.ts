@@ -25,6 +25,7 @@ export interface SimilarMatch {
   matchId?: number;
   round_number: number;
   league_name: string;
+  expected_start?: string;
   matchName: string;
   homeTeam: string;
   awayTeam: string;
