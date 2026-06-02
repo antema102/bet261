@@ -220,7 +220,7 @@ router.get("/daily", async (req: Request, res: Response) => {
     const totalRounds = await Match.countDocuments(matchQuery);
     const upcomingRounds = await Match.find(matchQuery)
       .select(
-        "league_name league_id event_category_id round_number expected_start odds_data result_data",
+        "league_name league_id event_category_id round_number expected_start extracted_matches",
       )
       .sort({ expected_start: 1 })
       .skip(skip)
@@ -242,46 +242,43 @@ router.get("/daily", async (req: Request, res: Response) => {
       historicalMatches = _dailyCache.historicalMatches;
       historicalByOddsKey = _dailyCache.historicalByOddsKey;
     } else {
+      // Charge uniquement extracted_matches — plus de blobs odds_data/result_data
       const finishedRounds = await Match.find({
         status: "finished",
-        odds_data: { $ne: null },
-        result_data: { $ne: null },
+        extracted_matches: { $exists: true, $not: { $size: 0 } },
         ...leagueFilter,
       })
         .select(
-          "league_name league_id event_category_id round_number expected_start odds_data result_data",
+          "league_name league_id event_category_id round_number expected_start extracted_matches",
         )
         .lean();
 
       historicalMatches = [];
 
       for (const round of finishedRounds) {
-        const subMatches = extractRoundMatches(round.odds_data);
-        for (let i = 0; i < subMatches.length; i++) {
-          const score = extractScore(
-            round.result_data,
-            subMatches[i].matchId,
-            subMatches[i].oddsId,
-            i,
-            subMatches[i].homeTeam,
-            subMatches[i].awayTeam,
-          );
-          if (score) {
-            historicalMatches.push({
-              league_name: round.league_name,
-              league_id: round.league_id,
-              round_number: round.round_number,
-              event_category_id: (round as any).event_category_id,
-              expected_start: (round as any).expected_start,
-              matchId: subMatches[i].matchId,
-              matchName: subMatches[i].name,
-              homeTeam: subMatches[i].homeTeam,
-              awayTeam: subMatches[i].awayTeam,
-              odds: subMatches[i].odds,
-              overUnder: subMatches[i].overUnder,
-              result: score,
-            });
-          }
+        const ems = (round as any).extracted_matches ?? [];
+        for (const em of ems) {
+          if (
+            em.odds_home == null ||
+            em.odds_draw == null ||
+            em.odds_away == null ||
+            em.homeScore == null ||
+            em.awayScore == null
+          ) continue;
+          historicalMatches.push({
+            league_name: round.league_name,
+            league_id: round.league_id,
+            round_number: round.round_number,
+            event_category_id: (round as any).event_category_id,
+            expected_start: (round as any).expected_start,
+            matchId: em.matchId,
+            matchName: em.name ?? "",
+            homeTeam: em.homeTeam ?? "",
+            awayTeam: em.awayTeam ?? "",
+            odds: { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
+            overUnder: [],
+            result: { homeScore: em.homeScore, awayScore: em.awayScore },
+          });
         }
       }
 
@@ -299,7 +296,23 @@ router.get("/daily", async (req: Request, res: Response) => {
     const dailyMatches: any[] = [];
 
     for (const round of upcomingRounds) {
-      const subMatches = extractRoundMatches(round.odds_data);
+      const subMatches: Array<{
+        matchId: number;
+        name: string;
+        homeTeam: string;
+        awayTeam: string;
+        odds: OddsTriple;
+        overUnder: OverUnderLine[];
+      }> = ((round as any).extracted_matches ?? [])
+        .filter((em: any) => em.odds_home != null && em.odds_draw != null && em.odds_away != null)
+        .map((em: any) => ({
+          matchId:  em.matchId,
+          name:     em.name ?? "",
+          homeTeam: em.homeTeam ?? "",
+          awayTeam: em.awayTeam ?? "",
+          odds:     { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
+          overUnder: [],
+        }));
       const roundEntry: any = {
         league_name: round.league_name,
         league_id: round.league_id,

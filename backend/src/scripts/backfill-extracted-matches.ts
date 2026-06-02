@@ -1,7 +1,7 @@
 /**
  * Script de backfill — à exécuter UNE SEULE FOIS.
- * Peuple le champ `extracted_matches` sur tous les documents Match existants
- * qui n'ont pas encore ce champ, en traitant par lots de 500.
+ * Peuple le champ `extracted_matches` (cotes + scores) sur tous les documents Match existants.
+ * Traitement par lots de 500.
  *
  * Usage :
  *   npx ts-node src/scripts/backfill-extracted-matches.ts
@@ -10,7 +10,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import { Match } from "../models/Match";
-import { extractRoundMatches } from "../helpers/oddsHelpers";
+import { extractRoundMatches, extractScore } from "../helpers/oddsHelpers";
 
 const BATCH_SIZE = 500;
 
@@ -20,24 +20,12 @@ async function backfill(): Promise<void> {
   await mongoose.connect(uri);
   console.log("✅ Connecté à MongoDB");
 
-  const total = await Match.countDocuments({
-    odds_data: { $ne: null },
-    $or: [
-      { extracted_matches: { $exists: false } },
-      { extracted_matches: { $size: 0 } },
-    ],
-  });
+  const total = await Match.countDocuments({ odds_data: { $ne: null } });
   console.log(`📊 ${total} documents à traiter`);
 
   let processed = 0;
-  let cursor = Match.find({
-    odds_data: { $ne: null },
-    $or: [
-      { extracted_matches: { $exists: false } },
-      { extracted_matches: { $size: 0 } },
-    ],
-  })
-    .select("_id odds_data")
+  const cursor = Match.find({ odds_data: { $ne: null } })
+    .select("_id status odds_data result_data")
     .lean()
     .cursor();
 
@@ -45,15 +33,29 @@ async function backfill(): Promise<void> {
 
   for await (const doc of cursor) {
     const rawMatches = extractRoundMatches(doc.odds_data as any);
-    const extractedMatches = rawMatches.map((m) => ({
-      matchId:   m.matchId,
-      name:      m.name,
-      homeTeam:  m.homeTeam,
-      awayTeam:  m.awayTeam,
-      odds_home: m.odds.home,
-      odds_draw: m.odds.draw,
-      odds_away: m.odds.away,
-    }));
+    const extractedMatches = rawMatches.map((m, i) => {
+      const score =
+        doc.status === "finished"
+          ? extractScore(
+              doc.result_data as any,
+              m.matchId,
+              undefined,
+              i,
+              m.homeTeam,
+              m.awayTeam,
+            )
+          : null;
+      return {
+        matchId:   m.matchId,
+        name:      m.name,
+        homeTeam:  m.homeTeam,
+        awayTeam:  m.awayTeam,
+        odds_home: m.odds.home,
+        odds_draw: m.odds.draw,
+        odds_away: m.odds.away,
+        ...(score ? { homeScore: score.homeScore, awayScore: score.awayScore } : {}),
+      };
+    });
 
     bulk.push({
       filter: { _id: doc._id },
@@ -71,7 +73,6 @@ async function backfill(): Promise<void> {
     }
   }
 
-  // Flush le dernier lot
   if (bulk.length > 0) {
     await Match.bulkWrite(
       bulk.map(({ filter, update }) => ({ updateOne: { filter, update } })),

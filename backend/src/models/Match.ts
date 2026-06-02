@@ -22,6 +22,8 @@ const matchSchema = new Schema<IMatch>(
           odds_home: { type: Number },
           odds_draw: { type: Number },
           odds_away: { type: Number },
+          homeScore: { type: Number },
+          awayScore: { type: Number },
         },
       ],
       default: [],

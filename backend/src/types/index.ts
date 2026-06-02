@@ -8,6 +8,8 @@ export interface IExtractedMatch {
   odds_home?: number;
   odds_draw?: number;
   odds_away?: number;
+  homeScore?: number;
+  awayScore?: number;
 }
 
 export interface IMatch extends Document {

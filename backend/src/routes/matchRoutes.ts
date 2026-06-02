@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { Match } from "../models/Match";
 import { sendSuccess, sendError } from "../utils/response";
-import { extractRoundMatches } from "../helpers/oddsHelpers";
+import { extractRoundMatches, extractScore } from "../helpers/oddsHelpers";
 
 const router = Router();
 
@@ -155,6 +155,24 @@ router.put("/update-result", async (req: Request, res: Response) => {
         .status(200)
         .json({ success: true, message: "Déjà terminé ou introuvable" });
       return;
+    }
+
+    // Enrichit extracted_matches avec les scores pour éviter de recharger result_data plus tard
+    if (Array.isArray(match.extracted_matches) && match.extracted_matches.length > 0) {
+      const enriched = match.extracted_matches.map((em, i) => {
+        const score = extractScore(
+          result_data,
+          em.matchId as number,
+          undefined,
+          i,
+          em.homeTeam,
+          em.awayTeam,
+        );
+        return score
+          ? { ...em.toObject?.() ?? em, homeScore: score.homeScore, awayScore: score.awayScore }
+          : em.toObject?.() ?? em;
+      });
+      await Match.updateOne({ _id: match._id }, { $set: { extracted_matches: enriched } });
     }
 
     console.log(
