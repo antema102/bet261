@@ -169,8 +169,8 @@ router.put("/update-result", async (req: Request, res: Response) => {
           em.awayTeam,
         );
         return score
-          ? { ...em.toObject?.() ?? em, homeScore: score.homeScore, awayScore: score.awayScore }
-          : em.toObject?.() ?? em;
+          ? { ...em, homeScore: score.homeScore, awayScore: score.awayScore }
+          : { ...em };
       });
       await Match.updateOne({ _id: match._id }, { $set: { extracted_matches: enriched } });
     }
