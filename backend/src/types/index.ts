@@ -1,15 +1,26 @@
 import { Document } from 'mongoose';
 
+export interface IExtractedMatch {
+  matchId?: number;
+  name?: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  odds_home?: number;
+  odds_draw?: number;
+  odds_away?: number;
+}
+
 export interface IMatch extends Document {
   league_name: string;
   league_id: number;
   round_number: number;
   event_category_id: number;
   expected_start?: Date;
-  odds_data?: Record<string, unknown>;   // données brutes du round (cotes, matchs)
-  result_data?: Record<string, unknown>; // données résultat une fois le round terminé
+  odds_data?: Record<string, unknown>;
+  result_data?: Record<string, unknown>;
   status: 'upcoming' | 'finished';
   timestamp: Date;
+  extracted_matches?: IExtractedMatch[];
 }
 
 export interface IRanking extends Document {

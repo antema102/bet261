@@ -37,7 +37,6 @@ const predictionSchema = new Schema<IPrediction>(
   { timestamps: true },
 );
 
-// Clé unique : une prédiction par round/saison/tolérance
 predictionSchema.index(
   { league_id: 1, event_category_id: 1, round_number: 1, tolerance: 1 },
   { unique: true },

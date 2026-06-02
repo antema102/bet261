@@ -4,7 +4,6 @@ import { sendSuccess, sendError } from '../utils/response';
 
 const router = Router();
 
-// POST /api/rankings — enregistrer un classement
 router.post('/', async (req: Request, res: Response) => {
   try {
     const ranking = new Ranking(req.body);
@@ -17,7 +16,6 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/rankings/:league_id? — récupérer le classement le plus récent
 router.get('/:league_id?', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.league_id) ? req.params.league_id[0] : req.params.league_id;

@@ -1,40 +1,36 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
 
-import { connectDB } from './utils/db';
-import matchRoutes from './routes/matchRoutes';
-import rankingRoutes from './routes/rankingRoutes';
-import leagueRoutes from './routes/leagueRoutes';
-import analysisRoutes from './routes/analysisRoutes';
-import predictionRoutes from './routes/predictionRoutes';
+import { connectDB } from "./utils/db";
+import matchRoutes from "./routes/matchRoutes";
+import rankingRoutes from "./routes/rankingRoutes";
+import leagueRoutes from "./routes/leagueRoutes";
+import analysisRoutes from "./routes/analysisRoutes";
+import predictionRoutes from "./routes/predictionRoutes";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT;
 
-// Middleware
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
-// Connexion à MongoDB
 connectDB();
 
 // Routes
-app.use('/api/matches', matchRoutes);
-app.use('/api/rankings', rankingRoutes);
-app.use('/api/leagues', leagueRoutes);
-app.use('/api/analysis', analysisRoutes);
-app.use('/api/predictions', predictionRoutes);
+app.use("/api/matches", matchRoutes);
+app.use("/api/rankings", rankingRoutes);
+app.use("/api/leagues", leagueRoutes);
+app.use("/api/analysis", analysisRoutes);
+app.use("/api/predictions", predictionRoutes);
 
-// Route de santé
-app.get('/health', (_req, res) => {
-  res.json({ status: 'OK', timestamp: new Date() });
+app.get("/health", (_req, res) => {
+  res.json({ status: "OK", timestamp: new Date() });
 });
 
-// Démarrage du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
   console.log(`📊 API disponible sur http://localhost:${PORT}/api`);

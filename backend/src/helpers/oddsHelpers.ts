@@ -110,8 +110,6 @@ export function extractRoundMatches(oddsData: any): Array<{
   return result;
 }
 
-// ─── Calculs de distance ──────────────────────────────────────────────────────
-
 /**
  * Distance euclidienne entre deux triplets de cotes
  */
