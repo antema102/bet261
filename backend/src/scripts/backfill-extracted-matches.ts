@@ -53,6 +53,7 @@ async function backfill(): Promise<void> {
         odds_home: m.odds.home,
         odds_draw: m.odds.draw,
         odds_away: m.odds.away,
+        overUnder: m.overUnder,
         ...(score ? { homeScore: score.homeScore, awayScore: score.awayScore } : {}),
       };
     });

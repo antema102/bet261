@@ -276,7 +276,7 @@ router.get("/daily", async (req: Request, res: Response) => {
             homeTeam: em.homeTeam ?? "",
             awayTeam: em.awayTeam ?? "",
             odds: { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
-            overUnder: [],
+            overUnder: em.overUnder ?? [],
             result: { homeScore: em.homeScore, awayScore: em.awayScore },
           });
         }
@@ -311,7 +311,7 @@ router.get("/daily", async (req: Request, res: Response) => {
           homeTeam: em.homeTeam ?? "",
           awayTeam: em.awayTeam ?? "",
           odds:     { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
-          overUnder: [],
+          overUnder: em.overUnder ?? [],
         }));
       const roundEntry: any = {
         league_name: round.league_name,

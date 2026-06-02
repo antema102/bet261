@@ -10,6 +10,7 @@ export interface IExtractedMatch {
   odds_away?: number;
   homeScore?: number;
   awayScore?: number;
+  overUnder?: Array<{ total: string; over: number; under: number }>;
 }
 
 export interface IMatch extends Document {

@@ -101,6 +101,7 @@ router.post("/upsert", async (req: Request, res: Response) => {
       odds_home: m.odds.home,
       odds_draw: m.odds.draw,
       odds_away: m.odds.away,
+      overUnder: m.overUnder,
     }));
 
     const match = await Match.findOneAndUpdate(
