@@ -13,7 +13,7 @@ import {
 
 const router = Router();
 
-// ─── Cache en mémoire pour les matchs historiques (TTL = 5 min) ──────────────
+// ─── Cache en mémoire pour les matchs historiques ────────────────────────────
 type HistoricalMatch = {
   league_name: string;
   league_id: number;
@@ -34,8 +34,76 @@ interface DailyCacheEntry {
   historicalByOddsKey: Map<string, HistoricalMatch[]>;
   ts: number;
 }
-const HISTORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const HISTORY_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 let _dailyCache: DailyCacheEntry | null = null;
+let _buildingCache = false;
+
+async function buildHistoryCache(leagueFilter: Record<string, unknown> = {}): Promise<void> {
+  if (_buildingCache) return;
+  _buildingCache = true;
+  try {
+    const leagueKey = (leagueFilter as any).league_id?.toString() ?? "*";
+
+    const finishedRounds = await Match.find({
+      status: "finished",
+      "extracted_matches.0": { $exists: true },
+      ...leagueFilter,
+    })
+      .select(
+        "league_name league_id event_category_id round_number expected_start extracted_matches",
+      )
+      .lean();
+
+    const historicalMatches: HistoricalMatch[] = [];
+
+    for (const round of finishedRounds) {
+      const ems = (round as any).extracted_matches ?? [];
+      for (const em of ems) {
+        if (
+          em.odds_home == null ||
+          em.odds_draw == null ||
+          em.odds_away == null ||
+          em.homeScore == null ||
+          em.awayScore == null
+        ) continue;
+        historicalMatches.push({
+          league_name: round.league_name,
+          league_id: round.league_id,
+          round_number: round.round_number,
+          event_category_id: (round as any).event_category_id,
+          expected_start: (round as any).expected_start,
+          matchId: em.matchId,
+          matchName: em.name ?? "",
+          homeTeam: em.homeTeam ?? "",
+          awayTeam: em.awayTeam ?? "",
+          odds: { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
+          overUnder: em.overUnder ?? [],
+          result: { homeScore: em.homeScore, awayScore: em.awayScore },
+        });
+      }
+    }
+
+    const historicalByOddsKey = new Map<string, HistoricalMatch[]>();
+    for (const h of historicalMatches) {
+      const key = oddsKey(h.odds);
+      const bucket = historicalByOddsKey.get(key);
+      if (bucket) bucket.push(h);
+      else historicalByOddsKey.set(key, [h]);
+    }
+
+    _dailyCache = { leagueKey, historicalMatches, historicalByOddsKey, ts: Date.now() };
+    console.log(`✅ Cache historique construit : ${historicalMatches.length} matchs`);
+  } catch (err) {
+    console.error("❌ Erreur construction cache historique:", err);
+  } finally {
+    _buildingCache = false;
+  }
+}
+
+/** Appelé depuis server.ts après connectDB() pour préchauffer le cache */
+export async function warmDailyCache(): Promise<void> {
+  await buildHistoryCache();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/analysis/similar
@@ -212,7 +280,7 @@ router.get("/daily", async (req: Request, res: Response) => {
       : {};
     const matchQuery = {
       status: "upcoming",
-      odds_data: { $ne: null },
+      "extracted_matches.0": { $exists: true },
       ...leagueFilter,
       ...timeFilter,
     };
@@ -229,68 +297,29 @@ router.get("/daily", async (req: Request, res: Response) => {
 
     const leagueKey = (leagueFilter as any).league_id?.toString() ?? "*";
     const now = Date.now();
+    const cacheValid =
+      _dailyCache &&
+      _dailyCache.leagueKey === leagueKey &&
+      now - _dailyCache.ts < HISTORY_CACHE_TTL;
+
+    // Stale-while-revalidate : retourne immédiatement le cache périmé
+    // et déclenche un rebuild en arrière-plan
+    if (_dailyCache && _dailyCache.leagueKey === leagueKey && !cacheValid) {
+      buildHistoryCache(leagueFilter); // fire-and-forget
+    }
 
     let historicalMatches: HistoricalMatch[];
     let historicalByOddsKey: Map<string, HistoricalMatch[]>;
 
-    // Utilise le cache si disponible et non expiré pour la même ligue
-    if (
-      _dailyCache &&
-      _dailyCache.leagueKey === leagueKey &&
-      now - _dailyCache.ts < HISTORY_CACHE_TTL
-    ) {
+    if (_dailyCache && _dailyCache.leagueKey === leagueKey) {
+      // Cache disponible (frais ou périmé) — réponse immédiate
       historicalMatches = _dailyCache.historicalMatches;
       historicalByOddsKey = _dailyCache.historicalByOddsKey;
     } else {
-      // Charge uniquement extracted_matches — plus de blobs odds_data/result_data
-      const finishedRounds = await Match.find({
-        status: "finished",
-        extracted_matches: { $exists: true, $not: { $size: 0 } },
-        ...leagueFilter,
-      })
-        .select(
-          "league_name league_id event_category_id round_number expected_start extracted_matches",
-        )
-        .lean();
-
-      historicalMatches = [];
-
-      for (const round of finishedRounds) {
-        const ems = (round as any).extracted_matches ?? [];
-        for (const em of ems) {
-          if (
-            em.odds_home == null ||
-            em.odds_draw == null ||
-            em.odds_away == null ||
-            em.homeScore == null ||
-            em.awayScore == null
-          ) continue;
-          historicalMatches.push({
-            league_name: round.league_name,
-            league_id: round.league_id,
-            round_number: round.round_number,
-            event_category_id: (round as any).event_category_id,
-            expected_start: (round as any).expected_start,
-            matchId: em.matchId,
-            matchName: em.name ?? "",
-            homeTeam: em.homeTeam ?? "",
-            awayTeam: em.awayTeam ?? "",
-            odds: { home: em.odds_home, draw: em.odds_draw, away: em.odds_away },
-            overUnder: em.overUnder ?? [],
-            result: { homeScore: em.homeScore, awayScore: em.awayScore },
-          });
-        }
-      }
-
-      historicalByOddsKey = new Map<string, HistoricalMatch[]>();
-      for (const h of historicalMatches) {
-        const key = oddsKey(h.odds);
-        const bucket = historicalByOddsKey.get(key);
-        if (bucket) bucket.push(h);
-        else historicalByOddsKey.set(key, [h]);
-      }
-
-      _dailyCache = { leagueKey, historicalMatches, historicalByOddsKey, ts: now };
+      // Aucun cache (premier démarrage sans préchauffage) — attendre une fois
+      await buildHistoryCache(leagueFilter);
+      historicalMatches = _dailyCache?.historicalMatches ?? [];
+      historicalByOddsKey = _dailyCache?.historicalByOddsKey ?? new Map();
     }
 
     const dailyMatches: any[] = [];

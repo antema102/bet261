@@ -6,7 +6,7 @@ import { connectDB } from "./utils/db";
 import matchRoutes from "./routes/matchRoutes";
 import rankingRoutes from "./routes/rankingRoutes";
 import leagueRoutes from "./routes/leagueRoutes";
-import analysisRoutes from "./routes/analysisRoutes";
+import analysisRoutes, { warmDailyCache } from "./routes/analysisRoutes";
 import predictionRoutes from "./routes/predictionRoutes";
 
 dotenv.config();
@@ -19,6 +19,13 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 connectDB();
+
+// Préchauffage du cache historique après connexion DB (non bloquant)
+setTimeout(() => {
+  warmDailyCache().catch((err) =>
+    console.error("❌ Erreur préchauffage cache:", err),
+  );
+}, 3000);
 
 // Routes
 app.use("/api/matches", matchRoutes);
